@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全SNS対応 自動DM管理システム</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
+    --txt:#e7ebf2; --muted:#8b93a3; --accent:#4f8cff; --accent2:#22c55e;
+    --warn:#f59e0b; --danger:#ef4444; --chip:#232834;
+    --x:#1d9bf0; --ig:#e1306c; --fb:#1877f2; --tt:#00f2ea; --th:#a855f7; --li:#0a66c2;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;font-size:14px;line-height:1.5}
+  h1,h2,h3{margin:0}
+  a{color:var(--accent)}
+  .app{display:flex;min-height:100vh}
+  /* Sidebar */
+  .side{width:210px;background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;position:sticky;top:0;height:100vh;flex-shrink:0}
+  .brand{font-weight:700;font-size:15px;padding:6px 10px 14px;letter-spacing:.02em}
+  .brand small{display:block;color:var(--muted);font-weight:400;font-size:11px;margin-top:2px}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .nav button{display:flex;align-items:center;gap:9px;background:none;border:none;color:var(--muted);text-align:left;padding:9px 11px;border-radius:8px;cursor:pointer;font-size:13.5px;width:100%}
+  .nav button:hover{background:var(--panel2);color:var(--txt)}
+  .nav button.active{background:var(--accent);color:#fff;font-weight:600}
+  .nav .ico{width:18px;text-align:center}
+  /* Main */
+  .main{flex:1;padding:22px 26px;max-width:1200px;overflow-x:hidden}
+  .page-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+  .page-head h2{font-size:20px}
+  .page-head p{color:var(--muted);margin:4px 0 0;font-size:12.5px}
+  .btn{background:var(--accent);color:#fff;border:none;padding:9px 15px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600}
+  .btn:hover{filter:brightness(1.1)}
+  .btn.sec{background:var(--panel2);color:var(--txt);border:1px solid var(--line)}
+  .btn.ghost{background:none;border:1px solid var(--line);color:var(--muted)}
+  .btn.sm{padding:5px 10px;font-size:12px}
+  .btn.danger{background:var(--danger)}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  /* Cards */
+  .grid{display:grid;gap:14px}
+  .cards{grid-template-columns:repeat(auto-fill,minmax(215px,1fr))}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card h3{font-size:13px;color:var(--muted);font-weight:500;margin-bottom:8px}
+  .kpi{font-size:26px;font-weight:700}
+  .kpi small{font-size:13px;color:var(--muted);font-weight:400}
+  .bar{height:7px;background:var(--panel2);border-radius:99px;margin-top:10px;overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:99px;transition:width .4s}
+  .platform-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .platform-row:last-child{border-bottom:none}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--chip)}
+  .dot{width:8px;height:8px;border-radius:50%}
+  .badge{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600}
+  .b-ok{background:rgba(34,197,94,.15);color:#4ade80}
+  .b-warn{background:rgba(245,158,11,.15);color:#fbbf24}
+  .b-off{background:rgba(139,147,163,.15);color:var(--muted)}
+  .b-run{background:rgba(79,140,255,.18);color:#7aa8ff}
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+  tr:hover td{background:rgba(255,255,255,.02)}
+  .tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tbl-scroll{overflow-x:auto}
+  /* Forms */
+  input,select,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  textarea{resize:vertical;min-height:80px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+  .field{margin-bottom:13px}
+  .row{display:flex;gap:12px;flex-wrap:wrap}
+  .row > *{flex:1;min-width:130px}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+  .toolbar input,.toolbar select{width:auto;min-width:140px}
+  .spacer{flex:1}
+  .tag{display:inline-block;background:var(--chip);color:var(--muted);font-size:11px;padding:2px 7px;border-radius:6px;margin:1px 3px 1px 0}
+  .checkbox{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--txt);cursor:pointer}
+  .checkbox input{width:auto}
+  /* Modal */
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .overlay.on{display:flex}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:100%;max-width:520px;max-height:88vh;overflow:auto}
+  .modal h3{font-size:16px;margin-bottom:16px}
+  .modal-foot{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
+  .hint{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:11px 13px;font-size:12.5px;color:var(--muted);margin-bottom:16px}
+  .hint.warn{border-left-color:var(--warn)}
+  .empty{text-align:center;color:var(--muted);padding:44px 20px;font-size:13px}
+  .seg-controls{display:flex;flex-direction:column;gap:8px}
+  .seg-rule{display:flex;gap:8px;align-items:center}
+  .seg-rule select,.seg-rule input{flex:1}
+  .mini{font-size:11px;color:var(--muted)}
+  .stat-inline{display:flex;gap:18px;flex-wrap:wrap;margin-top:6px}
+  .stat-inline div span{display:block;font-size:19px;font-weight:700}
+  .stat-inline div small{color:var(--muted);font-size:11px}
+  .log-item{font-size:12.5px}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:760px){.side{width:56px}.brand{font-size:0}.brand small{display:none}.nav button span:last-child{display:none}.split{grid-template-columns:1fr}}
+  .toggle{position:relative;width:38px;height:22px;background:var(--panel2);border:1px solid var(--line);border-radius:99px;cursor:pointer;flex:none}
+  .toggle i{position:absolute;top:2px;left:2px;width:16px;height:16px;background:var(--muted);border-radius:50%;transition:.2s}
+  .toggle.on{background:var(--accent2);border-color:var(--accent2)}
+  .toggle.on i{left:18px;background:#fff}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">SNS DM Hub<small>自動DM管理システム</small></div>
+    <nav class="nav" id="nav"></nav>
+  </aside>
+  <main class="main" id="main"></main>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+
+<script>
+/* ============================================================
+   全SNS対応 自動DM管理システム
+   - localStorageで永続化
+   - 各SNSのガイドライン上限を自動で監視・遵守
+   - ターゲット → セグメント → リスト → 送信キュー
+   - 実送信は公式API連携エンジン(Python/Render)へ委譲する設計
+============================================================ */
+
+/* ---- プラットフォーム定義（ガイドライン準拠のデフォルト上限） ---- */
+const PLATFORMS = {
+  x:        {name:"X (Twitter)", color:"var(--x)",  api:true,  capDefault:40,  capMax:500, note:"公式API v2。DMは開発者承認が必要。コールドDMは低め推奨。"},
+  instagram:{name:"Instagram",   color:"var(--ig)", api:true,  capDefault:50,  capMax:100, note:"Meta Messaging API。相手メッセージ後24hウィンドウ等の制約。"},
+  facebook: {name:"Facebook",    color:"var(--fb)", api:true,  capDefault:40,  capMax:100, note:"Messenger API。原則Opt-inが必要。"},
+  tiktok:   {name:"TikTok",      color:"var(--tt)", api:false, capDefault:25,  capMax:50,  note:"公開DM APIなし。半自動運用（キュー＋手動/補助）。"},
+  threads:  {name:"Threads",     color:"var(--th)", api:false, capDefault:20,  capMax:40,  note:"公開DM APIなし。半自動運用。"},
+  linkedin: {name:"LinkedIn",    color:"var(--li)", api:true,  capDefault:22,  capMax:50,  note:"1日20-25件が安全圏。凍結リスク高め。"},
+};
+
+/* ---------- ストレージ ---------- */
+const LS_KEY = "sns_dm_hub_v1";
+const seed = () => ({
+  contacts: [],
+  lists: [],
+  logs: [],
+  settings: {
+    caps: Object.fromEntries(Object.entries(PLATFORMS).map(([k,v])=>[k,v.capDefault])),
+    enabled: Object.fromEntries(Object.keys(PLATFORMS).map(k=>[k,true])),
+    warmup: true,
+    window: {start:9, end:19},
+    minGapSec: 8
+  }
+});
+let DB = seed();
+
+/* ---- ワークスペース（マルチメンバー：サーバー保存） ---- */
+let WS=null, WS_TOKEN="";
+function serverMode(){ return !!WS; }
+function wsCreds(extra){ return Object.assign({member:WS, token:WS_TOKEN}, extra||{}); }
+function api(p){ return location.origin + p; }
+function wsHeaders(extra){ return Object.assign({"X-Member":WS,"X-Token":WS_TOKEN}, extra||{}); }
+
+function load(){
+  try{ const v = JSON.parse(localStorage.getItem(LS_KEY)); return v && v.contacts ? v : seed(); }
+  catch(e){ return seed(); }
+}
+let _saveTimer=null;
+function save(){
+  if(serverMode()){
+    localStorage.setItem("wsc_"+WS, JSON.stringify(DB));   // ローカルキャッシュ
+    clearTimeout(_saveTimer); _saveTimer=setTimeout(pushState, 700);
+  }else{
+    localStorage.setItem(LS_KEY, JSON.stringify(DB));
+  }
+}
+async function pushState(){
+  try{ await fetchT(api("/api/state"),{method:"PUT",headers:wsHeaders({"Content-Type":"application/json"}),body:JSON.stringify(DB)}); }catch(e){}
+}
+const uid = () => Math.random().toString(36).slice(2,9);
+const todayStr = () => new Date().toISOString().slice(0,10);
+
+/* 本日の送信済み件数（プラットフォーム別） */
+function sentToday(pf){
+  const t = todayStr();
+  return DB.logs.filter(l=>l.platform===pf && l.status==="sent" && (l.sentAt||"").slice(0,10)===t).length;
+}
+/* 実効上限（ウォームアップ適用） */
+function effectiveCap(pf){
+  let cap = DB.settings.caps[pf] ?? PLATFORMS[pf].capDefault;
+  return cap;
+}
+function remaining(pf){ return Math.max(0, effectiveCap(pf) - sentToday(pf)); }
+
+/* ---------- ルーティング ---------- */
+const PAGES = [
+  {id:"dashboard", icon:"📊", label:"ダッシュボード"},
+  {id:"contacts",  icon:"👥", label:"ターゲット"},
+  {id:"segments",  icon:"🎯", label:"セグメント / リスト"},
+  {id:"queue",     icon:"🚀", label:"送信キュー"},
+  {id:"posts",     icon:"📢", label:"自動投稿"},
+  {id:"logs",      icon:"📜", label:"送信ログ / 歩留"},
+  {id:"settings",  icon:"⚙️", label:"設定"},
+];
+let current = "dashboard";
+function renderNav(){
+  document.getElementById("nav").innerHTML = PAGES.map(p=>
+    `<button class="${p.id===current?'active':''}" onclick="go('${p.id}')"><span class="ico">${p.icon}</span><span>${p.label}</span></button>`
+  ).join("");
+  const b=document.querySelector('.brand small'); if(b) b.textContent = serverMode()? ('@'+WS) : '自動DM管理システム';
+}
+function go(id){ current=id; renderNav(); render(); window.scrollTo(0,0); }
+
+/* ---------- モーダル ---------- */
+function openModal(html){ document.getElementById("modal").innerHTML=html; document.getElementById("overlay").classList.add("on"); }
+function closeModal(){ document.getElementById("overlay").classList.remove("on"); }
+document.getElementById("overlay").addEventListener("click",e=>{ if(e.target.id==="overlay") closeModal(); });
+
+/* ---------- ヘルパ ---------- */
+function pfPill(pf){ const p=PLATFORMS[pf]; return `<span class="pill"><span class="dot" style="background:${p.color}"></span>${p.name}</span>`; }
+function esc(s){ return (s??"").toString().replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function allTags(){ const s=new Set(); DB.contacts.forEach(c=>(c.tags||[]).forEach(t=>s.add(t))); return [...s]; }
+
+/* ============================================================
+   ページ描画
+============================================================ */
+function render(){
+  const m = document.getElementById("main");
+  m.innerHTML = ({
+    dashboard:pageDashboard, contacts:pageContacts, segments:pageSegments,
+    queue:pageQueue, posts:pagePosts, logs:pageLogs, settings:pageSettings
+  }[current])();
+  if(current==="dashboard") drawBars();
+  if(current==="posts") loadServerPosts();
+  if(current==="settings") loadCreds();
+}
+
+/* ---------- ダッシュボード ---------- */
+function pageDashboard(){
+  const totalContacts = DB.contacts.length;
+  const totalLists = DB.lists.length;
+  const sentAll = DB.logs.filter(l=>l.status==="sent").length;
+  const replies = DB.logs.filter(l=>l.reply).length;
+  const rate = sentAll? Math.round(replies/sentAll*100):0;
+  const activePf = Object.keys(PLATFORMS).filter(k=>DB.settings.enabled[k]);
+
+  const rows = activePf.map(pf=>{
+    const cap=effectiveCap(pf), used=sentToday(pf), pct=Math.min(100,Math.round(used/cap*100));
+    const col = pct>=100?'var(--danger)':pct>=80?'var(--warn)':'var(--accent2)';
+    let status = !PLATFORMS[pf].api ? `<span class="badge b-off">半自動</span>` :
+                 pct>=100? `<span class="badge b-warn">上限到達</span>` :
+                 `<span class="badge b-ok">送信可</span>`;
+    return `<div class="platform-row">
+      <div style="width:150px">${pfPill(pf)}</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span class="mini">本日 ${used} / ${cap} 件</span><span class="mini">残 ${cap-used}</span></div>
+        <div class="bar"><i class="dashbar" data-w="${pct}" style="width:0;background:${col}"></i></div>
+      </div>
+      <div style="width:90px;text-align:right">${status}</div>
+    </div>`;
+  }).join("");
+
+  return `
+  <div class="page-head"><div><h2>ダッシュボード</h2>
+    <p>本日 ${todayStr()} ・ ガイドライン上限を自動監視しています</p></div>
+    <button class="btn" onclick="go('queue')">🚀 送信キューへ</button></div>
+
+  <div class="grid cards" style="margin-bottom:16px">
+    <div class="card"><h3>登録ターゲット</h3><div class="kpi">${totalContacts}<small> 件</small></div></div>
+    <div class="card"><h3>リスト数</h3><div class="kpi">${totalLists}<small> 本</small></div></div>
+    <div class="card"><h3>累計送信</h3><div class="kpi">${sentAll}<small> 件</small></div></div>
+    <div class="card"><h3>返信率（歩留）</h3><div class="kpi" style="color:var(--accent2)">${rate}<small>%</small></div>
+      <div class="mini" style="margin-top:4px">返信 ${replies} / 送信 ${sentAll}</div></div>
+  </div>
+
+  <div class="card">
+    <h3 style="font-size:14px;color:var(--txt);margin-bottom:6px">SNS別 本日の送信状況</h3>
+    <p class="mini" style="margin-bottom:6px">各SNSのガイドライン上限に達すると自動でブロックします</p>
+    ${rows || '<div class="empty">有効なSNSがありません。設定から有効化してください。</div>'}
+  </div>`;
+}
+function drawBars(){ setTimeout(()=>document.querySelectorAll('.dashbar').forEach(b=>b.style.width=b.dataset.w+'%'),50); }
+
+/* ---------- ターゲット ---------- */
+let contactFilter = {q:"",pf:"",tag:""};
+function pageContacts(){
+  let list = DB.contacts.filter(c=>{
+    if(contactFilter.pf && c.platform!==contactFilter.pf) return false;
+    if(contactFilter.tag && !(c.tags||[]).includes(contactFilter.tag)) return false;
+    if(contactFilter.q){ const q=contactFilter.q.toLowerCase();
+      if(!((c.handle||"")+ (c.name||"")+(c.company||"")).toLowerCase().includes(q)) return false; }
+    return true;
+  });
+  const tagOpts = allTags().map(t=>`<option ${contactFilter.tag===t?'selected':''}>${esc(t)}</option>`).join("");
+  const pfOpts = Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${contactFilter.pf===k?'selected':''}>${v.name}</option>`).join("");
+
+  const rows = list.map(c=>`
+    <tr>
+      <td>${pfPill(c.platform)}</td>
+      <td><b>${esc(c.handle)}</b></td>
+      <td>${esc(c.name)||'<span class="mini">-</span>'}</td>
+      <td>${esc(c.company)||'<span class="mini">-</span>'}</td>
+      <td>${esc(c.region)||'<span class="mini">-</span>'}</td>
+      <td>${(c.tags||[]).map(t=>`<span class="tag">${esc(t)}</span>`).join("")||'<span class="mini">-</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn ghost sm" onclick="editContact('${c.id}')">編集</button>
+        <button class="btn ghost sm" onclick="delContact('${c.id}')">✕</button></td>
+    </tr>`).join("");
+
+  return `
+  <div class="page-head"><div><h2>ターゲット管理</h2>
+    <p>送信対象を登録・タグ付けします（${DB.contacts.length}件）</p></div>
+    <div style="display:flex;gap:8px">
+      <button class="btn sec" onclick="importModal()">📥 CSVインポート</button>
+      <button class="btn" onclick="editContact()">＋ 追加</button></div></div>
+
+  <div class="toolbar">
+    <input placeholder="検索: ハンドル/名前/会社" value="${esc(contactFilter.q)}" oninput="contactFilter.q=this.value;render()">
+    <select onchange="contactFilter.pf=this.value;render()"><option value="">全SNS</option>${pfOpts}</select>
+    <select onchange="contactFilter.tag=this.value;render()"><option value="">全タグ</option>${tagOpts}</select>
+    <div class="spacer"></div>
+    <span class="mini">${list.length}件表示</span>
+  </div>
+
+  <div class="tbl-wrap"><div class="tbl-scroll"><table>
+    <thead><tr><th>SNS</th><th>ハンドル</th><th>名前</th><th>会社/属性</th><th>地域</th><th>タグ</th><th></th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="7"><div class="empty">ターゲットがありません。「＋追加」またはCSVインポートしてください。</div></td></tr>'}</tbody>
+  </table></div></div>`;
+}
+
+function editContact(id){
+  const c = id? DB.contacts.find(x=>x.id===id) : {platform:"x",handle:"",name:"",company:"",region:"",tags:[]};
+  const pfOpts = Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${c.platform===k?'selected':''}>${v.name}</option>`).join("");
+  openModal(`
+    <h3>${id?'ターゲット編集':'ターゲット追加'}</h3>
+    <div class="field"><label>SNS</label><select id="c_pf">${pfOpts}</select></div>
+    <div class="field"><label>ハンドル / ユーザーID（必須）</label><input id="c_handle" value="${esc(c.handle)}" placeholder="@username">
+      <div class="mini" style="margin-top:4px">X: @ユーザー名。<b>Instagram/Facebookは PSID/IGSID</b>（相手からのメッセージで取得するID。Opt-in必須）。</div></div>
+    <div class="row">
+      <div class="field"><label>名前</label><input id="c_name" value="${esc(c.name)}"></div>
+      <div class="field"><label>会社 / 属性</label><input id="c_company" value="${esc(c.company)}"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>地域</label><input id="c_region" value="${esc(c.region)}"></div>
+      <div class="field"><label>タグ（カンマ区切り）</label><input id="c_tags" value="${esc((c.tags||[]).join(', '))}" placeholder="EC, 美容, 見込み"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="saveContact('${id||''}')">保存</button></div>`);
+}
+function saveContact(id){
+  const handle=val("c_handle").trim();
+  if(!handle){ alert("ハンドルは必須です"); return; }
+  const obj={
+    id:id||uid(), platform:val("c_pf"), handle,
+    name:val("c_name").trim(), company:val("c_company").trim(), region:val("c_region").trim(),
+    tags:val("c_tags").split(",").map(s=>s.trim()).filter(Boolean)
+  };
+  if(id){ const i=DB.contacts.findIndex(x=>x.id===id); DB.contacts[i]=obj; }
+  else DB.contacts.unshift(obj);
+  save(); closeModal(); render();
+}
+function delContact(id){ if(confirm("削除しますか？")){ DB.contacts=DB.contacts.filter(c=>c.id!==id); save(); render(); } }
+
+function importModal(){
+  openModal(`
+    <h3>CSVインポート</h3>
+    <div class="hint">形式: <code>platform,handle,name,company,region,tags</code><br>
+    platform は x / instagram / facebook / tiktok / threads / linkedin。tagsは「;」区切り。1行目ヘッダーは任意。</div>
+    <textarea id="csv" placeholder="x,@taro,田中太郎,ABC商事,東京,EC;見込み
+instagram,@hanae_beauty,,美容サロン,大阪,美容"></textarea>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="doImport()">インポート</button></div>`);
+}
+function doImport(){
+  const lines = val("csv").split("\n").map(l=>l.trim()).filter(Boolean);
+  let n=0;
+  lines.forEach(line=>{
+    const parts = line.split(",").map(s=>s.trim());
+    if(parts[0]==="platform") return;
+    const pf = parts[0]?.toLowerCase();
+    if(!PLATFORMS[pf] || !parts[1]) return;
+    DB.contacts.unshift({id:uid(),platform:pf,handle:parts[1],name:parts[2]||"",company:parts[3]||"",region:parts[4]||"",tags:(parts[5]||"").split(";").map(s=>s.trim()).filter(Boolean)});
+    n++;
+  });
+  save(); closeModal(); render();
+  alert(n+"件インポートしました");
+}
+
+/* ---------- セグメント / リスト ---------- */
+let segRules = [{field:"platform",op:"is",val:"x"}];
+function pageSegments(){
+  const listRows = DB.lists.map(l=>{
+    const cnt=l.contactIds.length;
+    const sent=DB.logs.filter(x=>x.listId===l.id&&x.status==="sent").length;
+    return `<tr>
+      <td><b>${esc(l.name)}</b></td>
+      <td>${pfPill(l.platform)}</td>
+      <td>${cnt} 件</td>
+      <td><span class="mini">${esc((l.template||"").slice(0,40))}${(l.template||"").length>40?'…':''}</span></td>
+      <td>${sent>0?`<span class="badge b-ok">${sent}送信済</span>`:'<span class="badge b-off">未送信</span>'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn ghost sm" onclick="editList('${l.id}')">編集</button>
+        <button class="btn ghost sm" onclick="go('queue')">送信</button>
+        <button class="btn ghost sm" onclick="syncCampaign('${l.id}')" title="サーバーに同期しcronで毎日自動送信">🔁自動化</button>
+        <button class="btn ghost sm" onclick="delList('${l.id}')">✕</button></td>
+    </tr>`;
+  }).join("");
+
+  return `
+  <div class="page-head"><div><h2>セグメント / リスト</h2>
+    <p>条件でターゲットを絞り込み、送信リストを作成します</p></div>
+    <button class="btn" onclick="newListModal()">＋ リスト作成</button></div>
+
+  <div class="hint">セグメント条件でターゲットを抽出 → リスト化 → SNSと文面を割り当て → 送信キューへ流します。</div>
+
+  <div class="tbl-wrap"><div class="tbl-scroll"><table>
+    <thead><tr><th>リスト名</th><th>SNS</th><th>件数</th><th>文面</th><th>状態</th><th></th></tr></thead>
+    <tbody>${listRows || '<tr><td colspan="6"><div class="empty">リストがありません。「＋リスト作成」で作成してください。</div></td></tr>'}</tbody>
+  </table></div></div>`;
+}
+
+function matchSeg(rules,c){
+  return rules.every(r=>{
+    let v = (r.field==="tag") ? (c.tags||[]).join(" ") : (c[r.field]||"");
+    v=(v||"").toString().toLowerCase(); const t=(r.val||"").toLowerCase();
+    if(r.op==="is") return r.field==="tag" ? (c.tags||[]).map(x=>x.toLowerCase()).includes(t) : v===t;
+    if(r.op==="has") return v.includes(t);
+    if(r.op==="not") return !v.includes(t);
+    return true;
+  });
+}
+function segMatches(){ return DB.contacts.filter(c=>matchSeg(segRules,c)); }
+
+function newListModal(existing){
+  const l = existing || {name:"",platform:"x",template:"こんにちは{{name}}さん、\n\n",contactIds:null};
+  if(!existing) segRules=[{field:"platform",op:"is",val:"x"}];
+  const pfOpts = Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${l.platform===k?'selected':''}>${v.name}</option>`).join("");
+  openModal(`
+    <h3>${existing?'リスト編集':'リスト作成'}</h3>
+    <div class="field"><label>リスト名</label><input id="l_name" value="${esc(l.name)}" placeholder="例）東京・EC事業者 一次アプローチ"></div>
+    <div class="field"><label>送信SNS</label><select id="l_pf" onchange="segRules[0]={field:'platform',op:'is',val:this.value};document.getElementById('segCount').textContent=segMatches().length">${pfOpts}</select></div>
+
+    ${existing? '' : `<div class="field"><label>セグメント条件</label>
+      <div class="seg-controls" id="segBox"></div>
+      <button class="btn ghost sm" style="margin-top:8px" onclick="segRules.push({field:'tag',op:'is',val:''});renderSeg()">＋条件を追加</button>
+      <div class="mini" style="margin-top:8px">該当: <b id="segCount">0</b> 件</div></div>`}
+
+    <div class="field"><label>DM文面（{{name}} {{company}} 差し込み可）</label>
+      <textarea id="l_tpl" placeholder="文面">${esc(l.template)}</textarea>
+      <div class="mini" style="margin-top:4px">改行・絵文字OK。過度な営業色はスパム判定を招くため注意。</div></div>
+
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="saveList('${existing?existing.id:''}')">${existing?'保存':'リスト作成'}</button></div>`);
+  if(!existing){ renderSeg(); }
+}
+function renderSeg(){
+  const box=document.getElementById("segBox"); if(!box) return;
+  const fields={platform:"SNS",handle:"ハンドル",name:"名前",company:"会社/属性",region:"地域",tag:"タグ"};
+  const ops={is:"が一致",has:"を含む",not:"を含まない"};
+  box.innerHTML = segRules.map((r,i)=>{
+    const fo=Object.entries(fields).map(([k,v])=>`<option value="${k}" ${r.field===k?'selected':''}>${v}</option>`).join("");
+    const oo=Object.entries(ops).map(([k,v])=>`<option value="${k}" ${r.op===k?'selected':''}>${v}</option>`).join("");
+    return `<div class="seg-rule">
+      <select onchange="segRules[${i}].field=this.value;refreshSeg()">${fo}</select>
+      <select onchange="segRules[${i}].op=this.value;refreshSeg()">${oo}</select>
+      <input value="${esc(r.val)}" oninput="segRules[${i}].val=this.value;refreshSeg()" placeholder="値">
+      ${i>0?`<button class="btn ghost sm" onclick="segRules.splice(${i},1);renderSeg()">✕</button>`:''}
+    </div>`;
+  }).join("");
+  refreshSeg();
+}
+function refreshSeg(){ const el=document.getElementById("segCount"); if(el) el.textContent=segMatches().length; }
+function saveList(id){
+  const name=val("l_name").trim(); if(!name){ alert("リスト名は必須です"); return; }
+  if(id){
+    const l=DB.lists.find(x=>x.id===id);
+    l.name=name; l.platform=val("l_pf"); l.template=val("l_tpl");
+  }else{
+    const ids=segMatches().map(c=>c.id);
+    if(!ids.length){ if(!confirm("該当0件です。空のリストを作成しますか？")) return; }
+    DB.lists.unshift({id:uid(),name,platform:val("l_pf"),template:val("l_tpl"),contactIds:ids,createdAt:new Date().toISOString()});
+  }
+  save(); closeModal(); render();
+}
+function editList(id){ newListModal(DB.lists.find(l=>l.id===id)); }
+function delList(id){ if(confirm("リストを削除しますか？")){ DB.lists=DB.lists.filter(l=>l.id!==id); save(); render(); } }
+
+/* リストをサーバーのキャンペーンとして同期 → cronの/drainで毎日自動送信 */
+async function syncCampaign(id){
+  if(!engineReady()){ alert("この操作はチームの共有URL（.../w/名前）から利用してください"); return; }
+  const l=DB.lists.find(x=>x.id===id); const pf=l.platform;
+  const recipients=l.contactIds.map(cid=>DB.contacts.find(c=>c.id===cid)).filter(Boolean)
+    .map(c=>({handle:c.handle,name:c.name,company:c.company}));
+  if(!recipients.length){ alert("リストにターゲットがありません"); return; }
+  if(!confirm(`「${l.name}」(${recipients.length}件)をサーバーに同期します。\ncronが毎日${PLATFORMS[pf].name}のガイドライン上限内で自動送信します。よろしいですか？`)) return;
+  const payload=wsCreds({id:"list_"+l.id, name:l.name, platform:pf,
+    cap:effectiveCap(pf), min_gap_sec:DB.settings.minGapSec,
+    template:l.template, window:DB.settings.window, active:true, recipients});
+  try{
+    const r=await fetchT(api("/campaigns"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(j.error){ alert("同期失敗: "+j.error); return; }
+    alert(`同期完了（${j.total}件）。\ncron(/drain)が毎日自動送信します。上限超過分は翌日へ自動繰越されます。`);
+  }catch(e){ alert("接続失敗: "+e.message); }
+}
+
+/* ---------- 送信キュー ---------- */
+let queueListId="";
+function pageQueue(){
+  const listOpts=DB.lists.map(l=>`<option value="${l.id}" ${queueListId===l.id?'selected':''}>${esc(l.name)} (${l.contactIds.length}件)</option>`).join("");
+  const list = DB.lists.find(l=>l.id===queueListId);
+
+  let body="";
+  if(!DB.lists.length){
+    body=`<div class="empty">リストがありません。まず<a onclick="go('segments')" style="cursor:pointer">セグメント/リスト</a>で作成してください。</div>`;
+  }else if(!list){
+    body=`<div class="empty">上のプルダウンから送信するリストを選択してください。</div>`;
+  }else{
+    const pf=list.platform, cap=effectiveCap(pf), used=sentToday(pf), rem=remaining(pf);
+    const sentIds=new Set(DB.logs.filter(l=>l.listId===list.id&&l.status==="sent").map(l=>l.contactId));
+    const targets=list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(Boolean);
+    const pending=targets.filter(c=>!sentIds.has(c.id));
+    const willSend=Math.min(pending.length, rem);
+    const apiWarn = !PLATFORMS[pf].api;
+
+    const preview = pending.slice(0,50).map((c,i)=>{
+      const blocked = i>=rem;
+      return `<tr style="${blocked?'opacity:.4':''}">
+        <td>${i+1}</td><td><b>${esc(c.handle)}</b></td><td>${esc(c.name)||'-'}</td>
+        <td class="mini">${esc(fillTpl(list.template,c).slice(0,44))}…</td>
+        <td>${blocked?'<span class="badge b-warn">上限超過</span>':'<span class="badge b-ok">送信対象</span>'}</td></tr>`;
+    }).join("");
+
+    body=`
+    <div class="split" style="margin-bottom:16px">
+      <div class="card">
+        <h3 style="color:var(--txt);font-size:14px">送信プレビュー</h3>
+        <div class="stat-inline">
+          <div><span>${targets.length}</span><small>リスト総数</small></div>
+          <div><span>${sentIds.size}</span><small>送信済み</small></div>
+          <div><span>${pending.length}</span><small>未送信</small></div>
+          <div><span style="color:${willSend<pending.length?'var(--warn)':'var(--accent2)'}">${willSend}</span><small>本日送信可</small></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 style="color:var(--txt);font-size:14px">ガイドライン状況 ${pfPill(pf)}</h3>
+        <div class="mini" style="margin:6px 0">本日 ${used} / ${cap} 件 ・ 残り ${rem} 件</div>
+        <div class="bar"><i style="width:${Math.min(100,used/cap*100)}%;background:${used>=cap?'var(--danger)':'var(--accent2)'}"></i></div>
+        <div class="mini" style="margin-top:8px">送信間隔 ${DB.settings.minGapSec}秒 ・ 送信時間帯 ${DB.settings.window.start}:00-${DB.settings.window.end}:00</div>
+        ${apiWarn?'<div class="hint warn" style="margin-top:10px;margin-bottom:0">このSNSは公式DM APIがないため<b>半自動</b>です。キュー生成後、送信操作は手動/補助で行います。</div>':''}
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="btn" onclick="runSend('${list.id}')" ${willSend<=0?'disabled':''}>🚀 ${willSend}件を送信キューに投入</button>
+      ${sentIds.size>0?`<button class="btn ghost sm" onclick="markReplies('${list.id}')">返信を記録</button>`:''}
+      <div class="spacer"></div>
+      <span class="mini">上限に達すると自動停止します</span>
+    </div>
+
+    <div class="tbl-wrap"><div class="tbl-scroll"><table>
+      <thead><tr><th>#</th><th>ハンドル</th><th>名前</th><th>文面プレビュー</th><th>判定</th></tr></thead>
+      <tbody>${preview||'<tr><td colspan="5"><div class="empty">未送信のターゲットはありません。</div></td></tr>'}</tbody>
+    </table></div></div>`;
+  }
+
+  return `
+  <div class="page-head"><div><h2>送信キュー</h2>
+    <p>ガイドライン上限内で自動送信します（超過分は翌日以降に自動繰越）</p></div></div>
+  <div class="toolbar">
+    <label style="margin:0">送信リスト：</label>
+    <select onchange="queueListId=this.value;render()" style="min-width:280px"><option value="">選択してください</option>${listOpts}</select>
+  </div>
+  ${body}`;
+}
+function fillTpl(tpl,c){ return (tpl||"").replace(/\{\{name\}\}/g,c.name||c.handle||"").replace(/\{\{company\}\}/g,c.company||""); }
+
+/* 送信実行：engineUrlがあれば実API送信、無ければデモ（記録のみ） */
+async function runSend(listId){
+  const list=DB.lists.find(l=>l.id===listId); const pf=list.platform;
+  let rem=remaining(pf);
+  const sentIds=new Set(DB.logs.filter(l=>l.listId===list.id&&l.status==="sent").map(l=>l.contactId));
+  const pending=list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(c=>c&&!sentIds.has(c.id));
+  const n=Math.min(pending.length,rem);
+  if(n<=0){ alert("本日の送信可能数が0です"); return; }
+  const batch=pending.slice(0,n);
+
+  /* ---- 実API送信モード（サーバー配信=ワークスペース時） ---- */
+  if(serverMode()){
+    if(!confirm(`${n}件を実送信します。\n\n送信SNS: ${PLATFORMS[pf].name}\n\n実際のDMが送信されます。よろしいですか？`)) return;
+    const payload=wsCreds({
+      platform:pf, cap:effectiveCap(pf), min_gap_sec:DB.settings.minGapSec, max_seconds:110,
+      messages:batch.map(c=>({handle:c.handle, text:fillTpl(list.template,c)}))
+    });
+    let res;
+    try{
+      const r=await fetchT(api("/send"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      res=await r.json();
+    }catch(e){ alert("送信エンジンに接続できません:\n"+e.message); return; }
+    if(res.error){ alert("エンジンエラー: "+res.error); return; }
+    const now=new Date();
+    (res.results||[]).forEach((rr,idx)=>{
+      const c=batch[idx]; if(!c) return;
+      if(rr.status==="sent"||rr.status==="error"){
+        DB.logs.unshift({id:uid(),listId,contactId:c.id,platform:pf,handle:c.handle,
+          message:fillTpl(list.template,c),status:rr.status,error:rr.error||"",
+          sentAt:new Date(now.getTime()+idx*1000).toISOString(),reply:false});
+      }
+    });
+    save(); render();
+    const R=res.results||[];
+    const ok=R.filter(r=>r.status==="sent").length, er=R.filter(r=>r.status==="error").length, df=R.filter(r=>r.status==="deferred"||r.status==="skipped").length;
+    alert(`送信完了\n成功 ${ok} / 失敗 ${er} / 保留 ${df}\n\n${df>0?'保留分は上限/時間制限のため未送信です。時間をおいて再度「送信」を押すか、cronで自動化してください。':''}`);
+    return;
+  }
+
+  /* ---- デモモード（file://などローカル・記録のみ） ---- */
+  if(!confirm(`${n}件を送信キューに投入します。\n\n※デモモード（記録のみ）です。実送信するにはチームの共有URL（.../w/名前）から利用してください。`)) return;
+  const now=new Date();
+  for(let i=0;i<n;i++){
+    const c=batch[i];
+    DB.logs.unshift({id:uid(),listId,contactId:c.id,platform:pf,handle:c.handle,
+      message:fillTpl(list.template,c),status:"sent",sentAt:new Date(now.getTime()+i*1000).toISOString(),reply:false});
+  }
+  save(); render();
+  alert(`${n}件を記録しました（デモ）。${rem-n<=0?'\n\n本日の上限に達したため、残りは翌日以降に自動繰越されます。':''}`);
+}
+
+function markReplies(listId){
+  const sent=DB.logs.filter(l=>l.listId===listId&&l.status==="sent");
+  const handles=prompt(`返信があったハンドルをカンマ区切りで入力\n（送信済み ${sent.length}件）`,"");
+  if(handles===null) return;
+  const set=new Set(handles.split(",").map(s=>s.trim()).filter(Boolean));
+  DB.logs.forEach(l=>{ if(l.listId===listId&&set.has(l.handle)) l.reply=true; });
+  save(); render();
+}
+
+/* ---------- 自動投稿 ---------- */
+let postDrafts=[]; let serverPosts=[]; let postForm={platform:"x",brief:"",tone:"",count:3,hashtags:true};
+function engineBase(){ return location.origin; }
+function engineReady(){ return serverMode(); }
+const POST_PF=["x","facebook","instagram"]; // 公式投稿API対応
+
+function pagePosts(){
+  const pfOpts=POST_PF.map(k=>`<option value="${k}" ${postForm.platform===k?'selected':''}>${PLATFORMS[k].name}</option>`).join("");
+  const notice = engineReady()? '' :
+    `<div class="hint warn">自動投稿はチームの共有URL（.../w/名前）から利用できます。ローカル（file://）ではプレビューのみです。</div>`;
+
+  const drafts = postDrafts.map((d,i)=>`
+    <div class="card" style="margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <b class="mini">案 ${i+1}</b>
+        <span class="mini">${(d.text||'').length}文字</span></div>
+      <textarea id="pd_${i}" style="min-height:70px">${esc(d.text)}${(d.hashtags&&d.hashtags.length)?'\n'+d.hashtags.map(h=>h.startsWith('#')?h:'#'+h).join(' '):''}</textarea>
+      <div class="row" style="margin-top:8px">
+        ${postForm.platform==='instagram'?`<div class="field" style="margin:0"><label>画像URL（IG必須）</label><input id="pi_${i}" placeholder="https://..."></div>`:''}
+        <div class="field" style="margin:0"><label>予約日時</label><input type="datetime-local" id="pt_${i}"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn sm" onclick="schedulePost(${i},false)">予約登録</button>
+        <button class="btn sec sm" onclick="schedulePost(${i},true)">今すぐ投稿</button>
+      </div>
+    </div>`).join("");
+
+  return `
+  <div class="page-head"><div><h2>自動投稿</h2>
+    <p>指示に沿ってAIが文面を生成 → 各SNSへ即時／予約投稿します</p></div></div>
+  ${notice}
+  <div class="split" style="margin-bottom:16px">
+    <div class="card">
+      <h3 style="color:var(--txt);font-size:14px;margin-bottom:12px">① 投稿を生成</h3>
+      <div class="row">
+        <div class="field"><label>投稿先SNS</label><select id="pf_pf" onchange="postForm.platform=this.value;render()">${pfOpts}</select></div>
+        <div class="field"><label>生成本数</label><input type="number" id="pf_count" min="1" max="5" value="${postForm.count}"></div>
+      </div>
+      <div class="field"><label>投稿テーマ・指示</label>
+        <textarea id="pf_brief" placeholder="例）新発売の美容液を告知。乾燥対策の悩みに寄り添い、初回20%OFFを訴求。20〜30代女性向け。">${esc(postForm.brief)}</textarea></div>
+      <div class="row">
+        <div class="field"><label>トーン</label><input id="pf_tone" value="${esc(postForm.tone)}" placeholder="親しみやすい / 専門的 など"></div>
+        <div class="field"><label class="checkbox" style="margin-top:22px"><input type="checkbox" id="pf_tags" ${postForm.hashtags?'checked':''}>ハッシュタグを付ける</label></div>
+      </div>
+      <button class="btn" onclick="genPosts()" ${engineReady()?'':'disabled'}>✨ AIで生成</button>
+      <span id="genMsg" class="mini" style="margin-left:8px"></span>
+    </div>
+    <div>
+      <h3 style="color:var(--muted);font-size:13px;margin:0 0 10px">② 確認・編集して投稿</h3>
+      ${drafts || '<div class="empty">左で生成すると投稿案がここに表示されます。</div>'}
+    </div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h3 style="color:var(--txt);font-size:14px;margin:0">予約・投稿履歴</h3>
+      <button class="btn ghost sm" onclick="loadServerPosts()">更新</button></div>
+    <div class="tbl-scroll"><table>
+      <thead><tr><th>投稿日時</th><th>SNS</th><th>本文</th><th>状態</th><th></th></tr></thead>
+      <tbody id="spBody">${spRows()}</tbody>
+    </table></div>
+  </div>`;
+}
+
+async function genPosts(){
+  postForm.platform=val("pf_pf"); postForm.brief=val("pf_brief").trim();
+  postForm.tone=val("pf_tone").trim(); postForm.count=+val("pf_count")||3;
+  postForm.hashtags=document.getElementById("pf_tags").checked;
+  if(!postForm.brief){ alert("投稿テーマ・指示を入力してください"); return; }
+  const msg=document.getElementById("genMsg"); msg.textContent="生成中…"; msg.style.color="var(--muted)";
+  try{
+    const r=await fetchT(api("/generate-post"),{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(wsCreds(postForm))});
+    const j=await r.json();
+    if(j.error){ msg.textContent="エラー: "+j.error; msg.style.color="var(--danger)"; return; }
+    postDrafts=j.posts||[]; msg.textContent=`${postDrafts.length}件生成`; msg.style.color="var(--accent2)"; render();
+  }catch(e){ msg.textContent="接続失敗: "+e.message; msg.style.color="var(--danger)"; }
+}
+
+async function schedulePost(i, now){
+  const text=val("pd_"+i).trim(); if(!text){ alert("本文が空です"); return; }
+  const img=document.getElementById("pi_"+i)? val("pi_"+i).trim() : "";
+  if(postForm.platform==="instagram" && !img){ alert("Instagram投稿には画像URLが必要です"); return; }
+  const payload=wsCreds({platform:postForm.platform, text, image_url:img});
+  try{
+    if(now){
+      if(!confirm("今すぐ投稿します。よろしいですか？")) return;
+      const r=await fetchT(api("/post"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const j=await r.json(); if(j.error){ alert("投稿失敗: "+j.error); return; }
+      alert("投稿しました");
+    }else{
+      let dt=val("pt_"+i); if(!dt){ alert("予約日時を入力してください"); return; }
+      if(dt.length===16) dt+=":00";
+      const r=await fetchT(api("/posts"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...payload,publish_at:dt})});
+      const j=await r.json(); if(j.error){ alert("予約失敗: "+j.error); return; }
+      alert("予約登録しました（cronで自動投稿されます）");
+    }
+    loadServerPosts();
+  }catch(e){ alert("接続失敗: "+e.message); }
+}
+
+function spRows(){
+  return serverPosts.map(p=>`<tr>
+    <td class="mini">${esc((p.publish_at||'').replace('T',' '))}</td>
+    <td>${pfPill(p.platform)}</td>
+    <td class="mini">${esc((p.text||'').slice(0,44))}…</td>
+    <td>${p.status==='posted'?'<span class="badge b-ok">投稿済</span>':p.status==='error'?`<span class="badge b-warn" title="${esc(p.error)}">失敗</span>`:'<span class="badge b-run">予約中</span>'}</td>
+    <td style="text-align:right"><button class="btn ghost sm" onclick="delServerPost('${p.id}')">✕</button></td>
+  </tr>`).join("") || '<tr><td colspan="5"><div class="empty">予約・投稿はまだありません。</div></td></tr>';
+}
+/* サーバーの投稿一覧を取得し、テーブル本体だけ差し替え（全体再描画しない＝ドラフト編集を保持） */
+async function loadServerPosts(){
+  if(!engineReady()){ serverPosts=[]; return; }
+  try{
+    const r=await fetchT(api("/posts"),{headers:wsHeaders()},15000); const j=await r.json();
+    serverPosts=j.posts||[];
+    const b=document.getElementById("spBody"); if(b) b.innerHTML=spRows();
+  }catch(e){ /* 接続不可時は無視 */ }
+}
+async function delServerPost(id){
+  if(!confirm("削除しますか？")) return;
+  try{ await fetchT(api("/posts/"+id),{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify(wsCreds())});
+    loadServerPosts();
+  }catch(e){ alert("削除失敗: "+e.message); }
+}
+
+/* ---------- ログ / 歩留 ---------- */
+let logFilter={pf:""};
+function pageLogs(){
+  let logs=DB.logs.slice(0,500).filter(l=>!logFilter.pf||l.platform===logFilter.pf);
+  const pfOpts=Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${logFilter.pf===k?'selected':''}>${v.name}</option>`).join("");
+
+  // プラットフォーム別集計
+  const stat=Object.keys(PLATFORMS).map(pf=>{
+    const s=DB.logs.filter(l=>l.platform===pf&&l.status==="sent").length;
+    const r=DB.logs.filter(l=>l.platform===pf&&l.reply).length;
+    return {pf,s,r,rate:s?Math.round(r/s*100):0};
+  }).filter(x=>x.s>0);
+
+  const statCards=stat.map(x=>`
+    <div class="card"><h3>${PLATFORMS[x.pf].name}</h3>
+      <div class="kpi">${x.rate}<small>%</small></div>
+      <div class="mini" style="margin-top:4px">送信 ${x.s} / 返信 ${x.r}</div>
+      <div class="bar"><i style="width:${x.rate}%;background:${PLATFORMS[x.pf].color}"></i></div></div>`).join("");
+
+  const rows=logs.map(l=>`<tr>
+    <td class="mini">${(l.sentAt||"").slice(0,16).replace("T"," ")}</td>
+    <td>${pfPill(l.platform)}</td>
+    <td><b>${esc(l.handle)}</b></td>
+    <td class="log-item mini">${esc((l.message||"").slice(0,50))}…</td>
+    <td>${l.status==="error"?`<span class="badge b-warn" title="${esc(l.error)}">失敗</span>`:l.reply?'<span class="badge b-ok">返信あり</span>':'<span class="badge b-off">送信済</span>'}</td>
+  </tr>`).join("");
+
+  return `
+  <div class="page-head"><div><h2>送信ログ / 歩留</h2>
+    <p>送信実績と返信率を分析します</p></div>
+    <button class="btn sec" onclick="exportLogs()">📤 CSV書き出し</button></div>
+
+  ${statCards?`<div class="grid cards" style="margin-bottom:16px">${statCards}</div>`:''}
+
+  <div class="toolbar">
+    <select onchange="logFilter.pf=this.value;render()"><option value="">全SNS</option>${pfOpts}</select>
+    <div class="spacer"></div><span class="mini">${logs.length}件</span>
+  </div>
+
+  <div class="tbl-wrap"><div class="tbl-scroll"><table>
+    <thead><tr><th>日時</th><th>SNS</th><th>ハンドル</th><th>文面</th><th>状態</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="5"><div class="empty">送信ログがありません。</div></td></tr>'}</tbody>
+  </table></div></div>`;
+}
+function exportLogs(){
+  const rows=[["date","platform","handle","message","reply"],
+    ...DB.logs.map(l=>[l.sentAt,l.platform,l.handle,(l.message||"").replace(/\n/g," "),l.reply?"1":"0"])];
+  const csv=rows.map(r=>r.map(v=>`"${(v||"").toString().replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob=new Blob([csv],{type:"text/csv"}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download="dm_logs_"+todayStr()+".csv"; a.click();
+}
+
+/* ---------- 設定 ---------- */
+function pageSettings(){
+  const s=DB.settings;
+  const capRows=Object.entries(PLATFORMS).map(([k,v])=>`
+    <div class="platform-row">
+      <div style="width:150px">${pfPill(k)}</div>
+      <div class="toggle ${s.enabled[k]?'on':''}" onclick="togglePf('${k}')"><i></i></div>
+      <div style="flex:1"><label style="margin:0 0 3px">1日の上限（推奨 ${v.capDefault} / 最大 ${v.capMax}）</label>
+        <input type="number" value="${s.caps[k]}" min="1" max="${v.capMax}" onchange="setCap('${k}',this.value)" style="max-width:120px"></div>
+      <div style="flex:2" class="mini">${v.note} ${v.api?'':'<b style="color:var(--warn)">DM API無</b>'}</div>
+    </div>`).join("");
+
+  return `
+  <div class="page-head"><div><h2>設定</h2>
+    <p>ガイドライン上限・送信ルール・API連携</p></div></div>
+
+  <div class="hint warn"><b>コンプライアンス上の注意：</b> 多くのSNSは非公式ツールによる自動DM一括送信を規約で禁止しています。
+  公式API＋各社ガイドライン上限の範囲で運用し、相手のOpt-in／関連性のある文面を徹底してください。上限超過はアカウント凍結の主因です。</div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="color:var(--txt);font-size:14px;margin-bottom:6px">SNS別 1日の送信上限</h3>
+    ${capRows}
+  </div>
+
+  <div class="split" style="margin-bottom:16px">
+    <div class="card">
+      <h3 style="color:var(--txt);font-size:14px;margin-bottom:12px">送信ルール</h3>
+      <div class="field"><label>送信間隔（秒）</label><input type="number" value="${s.minGapSec}" onchange="DB.settings.minGapSec=+this.value;save()"></div>
+      <div class="row">
+        <div class="field"><label>送信開始（時）</label><input type="number" min="0" max="23" value="${s.window.start}" onchange="DB.settings.window.start=+this.value;save()"></div>
+        <div class="field"><label>送信終了（時）</label><input type="number" min="0" max="23" value="${s.window.end}" onchange="DB.settings.window.end=+this.value;save()"></div>
+      </div>
+      <label class="checkbox"><input type="checkbox" ${s.warmup?'checked':''} onchange="DB.settings.warmup=this.checked;save()">ウォームアップ（新規アカウントは段階的に上限を引き上げ）</label>
+    </div>
+    <div class="card">
+      <h3 style="color:var(--txt);font-size:14px;margin-bottom:12px">ワークスペース</h3>
+      ${serverMode()? `
+        <div class="field"><label>あなたのワークスペース</label>
+          <div style="font-size:16px;font-weight:700">${esc(WS)}</div>
+          <div class="mini" style="margin-top:4px">${esc(location.origin)}/w/${esc(WS)}</div></div>
+        <div class="mini" style="margin-bottom:10px">このURLをブックマークして共有してください。データ・上限・SNS認証はこのワークスペース内で分離されています。</div>
+        <button class="btn ghost sm" onclick="wsLogout()">このデバイスからログアウト</button>
+      ` : `
+        <div class="hint" style="margin-bottom:0">現在は<b>ローカル/デモモード</b>（file://）です。実送信・AI生成・予約を使うには、デプロイ済みエンジンの共有URL <code>https://xxxx/w/あなたの名前</code> から開いてください。</div>
+      `}
+    </div>
+  </div>
+
+  ${serverMode()? `
+  <div class="card" style="margin-bottom:16px">
+    <h3 style="color:var(--txt);font-size:14px;margin-bottom:6px">SNS認証情報（このワークスペース専用）</h3>
+    <div class="mini" style="margin-bottom:12px">サーバー側にのみ保存され、ブラウザには保持されません。空欄は変更なし。実送信・投稿に必要です。</div>
+    <div class="split">
+      <div>
+        <div class="mini" style="font-weight:700;margin-bottom:6px">X (Twitter) — DM・投稿</div>
+        ${credField("X_API_KEY","API Key")}
+        ${credField("X_API_SECRET","API Secret")}
+        ${credField("X_ACCESS_TOKEN","Access Token")}
+        ${credField("X_ACCESS_SECRET","Access Secret")}
+      </div>
+      <div>
+        <div class="mini" style="font-weight:700;margin-bottom:6px">Facebook</div>
+        ${credField("FB_PAGE_TOKEN","Page Token")}
+        ${credField("FB_PAGE_ID","Page ID")}
+        <div class="mini" style="font-weight:700;margin:10px 0 6px">Instagram</div>
+        ${credField("IG_PAGE_TOKEN","Page Token")}
+        ${credField("IG_USER_ID","IG User ID")}
+      </div>
+    </div>
+    <button class="btn" onclick="saveCreds()">SNS認証を保存</button>
+  </div>` : ''}
+
+  <div class="card">
+    <h3 style="color:var(--txt);font-size:14px;margin-bottom:10px">データ管理</h3>
+    <div style="display:flex;gap:9px;flex-wrap:wrap">
+      <button class="btn sec" onclick="backup()">💾 バックアップ書き出し</button>
+      <button class="btn sec" onclick="document.getElementById('restore').click()">📂 復元</button>
+      <input type="file" id="restore" style="display:none" accept=".json" onchange="restore(this)">
+      <button class="btn danger" onclick="wipe()">全データ削除</button>
+    </div>
+  </div>`;
+}
+/* SNS認証情報（サーバー保存・状態のみ取得） */
+let credStatus={};
+function credBadge(k){ return credStatus[k]?'<span class="badge b-ok">設定済み</span>':'<span class="badge b-off">未設定</span>'; }
+function credField(key,label){
+  return `<div class="field"><label>${label} <span id="cs_${key}">${credBadge(key)}</span></label>
+    <input id="cr_${key}" type="password" placeholder="${credStatus[key]?'●●●（変更時のみ入力）':'未設定'}"></div>`;
+}
+async function loadCreds(){
+  if(!serverMode()) return;
+  try{
+    const r=await fetchT(api("/api/creds"),{headers:wsHeaders()},15000); const j=await r.json();
+    credStatus=j.status||{};
+    Object.keys(credStatus).forEach(k=>{ const el=document.getElementById("cs_"+k); if(el) el.innerHTML=credBadge(k); });
+  }catch(e){}
+}
+async function saveCreds(){
+  const keys=["X_API_KEY","X_API_SECRET","X_ACCESS_TOKEN","X_ACCESS_SECRET","FB_PAGE_TOKEN","FB_PAGE_ID","IG_PAGE_TOKEN","IG_USER_ID"];
+  const creds={}; keys.forEach(k=>{ const el=document.getElementById("cr_"+k); if(el && el.value.trim()) creds[k]=el.value.trim(); });
+  if(!Object.keys(creds).length){ alert("変更する項目を入力してください"); return; }
+  try{
+    const r=await fetchT(api("/api/creds"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(wsCreds({creds}))});
+    const j=await r.json(); if(j.error){ alert("保存失敗: "+j.error); return; }
+    credStatus=j.status||credStatus;
+    keys.forEach(k=>{ const el=document.getElementById("cr_"+k); if(el) el.value=""; const s=document.getElementById("cs_"+k); if(s) s.innerHTML=credBadge(k); });
+    alert("SNS認証情報を保存しました");
+  }catch(e){ alert("接続失敗: "+e.message); }
+}
+function togglePf(k){ DB.settings.enabled[k]=!DB.settings.enabled[k]; save(); render(); }
+function setCap(k,v){ v=Math.min(+v,PLATFORMS[k].capMax); DB.settings.caps[k]=v; save(); render(); }
+function backup(){ const blob=new Blob([JSON.stringify(DB)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="sns_dm_backup_"+todayStr()+".json"; a.click(); }
+function restore(inp){ const f=inp.files[0]; if(!f) return; const r=new FileReader(); r.onload=e=>{ try{ DB=JSON.parse(e.target.result); save(); render(); alert("復元しました"); }catch(x){ alert("読み込み失敗"); } }; r.readAsText(f); }
+function wipe(){ if(confirm("全データを削除しますか？この操作は取り消せません。")){ DB=seed(); save(); render(); } }
+
+/* ---------- utils ---------- */
+function val(id){ return document.getElementById(id).value; }
+/* タイムアウト付きfetch（エンジン無応答でUIが固まらないように） */
+async function fetchT(url, opts={}, ms=125000){
+  const ctl=new AbortController(); const t=setTimeout(()=>ctl.abort(), ms);
+  try{ return await fetch(url,{...opts,signal:ctl.signal}); }
+  finally{ clearTimeout(t); }
+}
+
+/* ---------- init / boot ---------- */
+async function loadState(){
+  const r=await fetch(api("/api/state"),{headers:wsHeaders()});
+  if(r.status!==200) throw new Error("state "+r.status);
+  const j=await r.json();
+  DB = (j && j.contacts)? j : seed();
+}
+async function tryOpen(){
+  if(!WS_TOKEN) return false;
+  try{
+    const r=await fetch(api("/api/workspace"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({member:WS,token:WS_TOKEN,mode:"open"})});
+    const j=await r.json(); if(!j.ok) return false;
+    await loadState(); return true;
+  }catch(e){ return false; }
+}
+async function boot(){
+  const isHttp=/^https?:/.test(location.protocol);
+  if(isHttp && /\/admin\/?$/.test(location.pathname)){ return bootAdmin(); }
+  const m=location.pathname.match(/\/w\/([a-z0-9][a-z0-9_-]{1,31})/i);
+  if(isHttp && m){
+    WS=m[1].toLowerCase(); WS_TOKEN=localStorage.getItem("wst_"+WS)||"";
+    if(await tryOpen()){ renderNav(); render(); }
+    else showAuthGate();
+  }else if(isHttp){
+    showEntry();
+  }else{
+    DB=load(); renderNav(); render();   // file:// = ローカル/デモ
+  }
+}
+
+/* ルート: ワークスペース選択 */
+function showEntry(){
+  document.getElementById("nav").innerHTML="";
+  document.getElementById("main").innerHTML=`
+    <div class="card" style="max-width:440px;margin:64px auto">
+      <h2 style="font-size:19px;margin-bottom:4px">SNS DM Hub</h2>
+      <p class="mini" style="margin:0 0 16px">あなたのワークスペースを開きます。名前を入れて進んでください（初回はトークンを設定して作成）。</p>
+      <div class="field"><label>ワークスペース名</label>
+        <input id="ent_name" placeholder="例: alice（英小文字・数字・_ -）" onkeydown="if(event.key==='Enter')enterWS()"></div>
+      <button class="btn" onclick="enterWS()">開く / 作成する</button>
+    </div>`;
+  const el=document.getElementById("ent_name"); if(el) el.focus();
+}
+function enterWS(){
+  const n=(document.getElementById("ent_name").value||"").toLowerCase().trim();
+  if(!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(n)){ alert("英小文字・数字・_ -、2〜32文字で入力してください"); return; }
+  location.href=location.origin+"/w/"+n;
+}
+
+/* トークン入力ゲート */
+function showAuthGate(){
+  document.getElementById("nav").innerHTML="";
+  document.getElementById("main").innerHTML=`
+    <div class="card" style="max-width:420px;margin:64px auto">
+      <h2 style="font-size:18px;margin-bottom:4px">ワークスペース「${esc(WS)}」</h2>
+      <p class="mini" style="margin:0 0 14px">アクセストークンを入力してください（初回は「新規作成」）。</p>
+      <div class="field"><label>トークン</label>
+        <input id="ws_tok" type="password" placeholder="このワークスペースの合言葉" onkeydown="if(event.key==='Enter')doAuth('open')"></div>
+      <div id="ws_msg" class="mini" style="margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="doAuth('open')">開く</button>
+        <button class="btn sec" onclick="doAuth('create')">新規作成</button></div>
+      <div style="margin-top:12px"><a class="mini" style="cursor:pointer" onclick="location.href=location.origin+'/'">← 別のワークスペース</a></div>
+    </div>`;
+  const el=document.getElementById("ws_tok"); if(el) el.focus();
+}
+async function doAuth(mode){
+  const msgEl=document.getElementById("ws_msg");
+  WS_TOKEN=document.getElementById("ws_tok").value;
+  if(!WS_TOKEN || WS_TOKEN.length<4){ msgEl.textContent="トークンは4文字以上"; msgEl.style.color="var(--danger)"; return; }
+  msgEl.textContent="確認中…"; msgEl.style.color="var(--muted)";
+  try{
+    const r=await fetch(api("/api/workspace"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({member:WS,token:WS_TOKEN,mode})});
+    const j=await r.json();
+    if(!j.ok){ msgEl.textContent=j.error||"認証に失敗しました"; msgEl.style.color="var(--danger)"; return; }
+    localStorage.setItem("wst_"+WS, WS_TOKEN);
+    await loadState(); renderNav(); render();
+  }catch(e){ msgEl.textContent="接続失敗: "+e.message; msgEl.style.color="var(--danger)"; }
+}
+function wsLogout(){ if(!confirm("このデバイスからログアウトしますか？（データはサーバーに残ります）")) return; localStorage.removeItem("wst_"+WS); location.reload(); }
+
+/* ---------- 管理者ページ (/admin) ---------- */
+let ADMIN_SECRET="", adminMembers=[], adminShowTokens=false;
+async function bootAdmin(){
+  ADMIN_SECRET=localStorage.getItem("admin_secret")||"";
+  if(ADMIN_SECRET && await adminFetch()){ renderAdmin(); return; }
+  showAdminLogin();
+}
+async function adminFetch(){
+  try{
+    const r=await fetch(api("/api/admin/members"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({secret:ADMIN_SECRET})});
+    if(!r.ok) return false; const j=await r.json(); adminMembers=j.members||[]; return true;
+  }catch(e){ return false; }
+}
+function showAdminLogin(){
+  document.getElementById("nav").innerHTML="";
+  const b=document.querySelector('.brand small'); if(b) b.textContent="管理者";
+  document.getElementById("main").innerHTML=`
+    <div class="card" style="max-width:420px;margin:64px auto">
+      <h2 style="font-size:18px;margin-bottom:4px">管理者ログイン</h2>
+      <p class="mini" style="margin:0 0 14px">マスターシークレット（ENGINE_SECRET）を入力してください。</p>
+      <div class="field"><label>マスターシークレット</label>
+        <input id="adm_sec" type="password" onkeydown="if(event.key==='Enter')adminLogin()"></div>
+      <div id="adm_msg" class="mini" style="margin-bottom:10px"></div>
+      <button class="btn" onclick="adminLogin()">ログイン</button></div>`;
+  const el=document.getElementById("adm_sec"); if(el) el.focus();
+}
+async function adminLogin(){
+  ADMIN_SECRET=document.getElementById("adm_sec").value;
+  const msg=document.getElementById("adm_msg");
+  if(!ADMIN_SECRET){ msg.textContent="入力してください"; return; }
+  msg.textContent="確認中…"; msg.style.color="var(--muted)";
+  if(await adminFetch()){ localStorage.setItem("admin_secret",ADMIN_SECRET); renderAdmin(); }
+  else{ msg.textContent="認証に失敗しました"; msg.style.color="var(--danger)"; }
+}
+function renderAdmin(){
+  const b=document.querySelector('.brand small'); if(b) b.textContent="管理者";
+  document.getElementById("nav").innerHTML="";
+  const rows=adminMembers.map(m=>{
+    const url=location.origin+"/w/"+m.member;
+    return `<tr>
+      <td><b>${esc(m.member)}</b></td>
+      <td class="mini"><a href="${esc(url)}" target="_blank">${esc(url)}</a></td>
+      <td class="mini">${esc((m.created_at||'').replace('T',' ').slice(0,16))}</td>
+      <td>${m.contacts} / ${m.lists}</td>
+      <td>${m.campaigns}</td>
+      <td>${m.sent_today}</td>
+      <td class="mini">${adminShowTokens?esc(m.token):'••••••'}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="btn ghost sm" onclick="adminCopy('${esc(url)}')">URL</button>
+        <button class="btn ghost sm" onclick="adminReset('${esc(m.member)}')">再設定</button>
+        <button class="btn ghost sm" onclick="adminDel('${esc(m.member)}')">✕</button></td></tr>`;
+  }).join("");
+  document.getElementById("main").innerHTML=`
+    <div class="page-head"><div><h2>管理者 — ワークスペース一覧</h2>
+      <p>${adminMembers.length} ワークスペース</p></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn sec" onclick="adminShowTokens=!adminShowTokens;renderAdmin()">${adminShowTokens?'トークンを隠す':'トークン表示'}</button>
+        <button class="btn sec" onclick="adminRefresh()">更新</button>
+        <button class="btn" onclick="adminCreateModal()">＋ 作成</button></div></div>
+    <div class="tbl-wrap"><div class="tbl-scroll"><table>
+      <thead><tr><th>名前</th><th>URL</th><th>作成</th><th>連絡先/リスト</th><th>ｷｬﾝﾍﾟｰﾝ</th><th>本日送信</th><th>トークン</th><th></th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="8"><div class="empty">ワークスペースがありません。「＋作成」またはメンバーが各自作成します。</div></td></tr>'}</tbody>
+    </table></div></div>
+    <div style="margin-top:12px"><button class="btn ghost sm" onclick="adminLogout()">ログアウト</button></div>`;
+}
+async function adminRefresh(){ if(await adminFetch()) renderAdmin(); }
+function adminLogout(){ localStorage.removeItem("admin_secret"); location.reload(); }
+function adminCopy(url){ try{ navigator.clipboard.writeText(url); }catch(e){} alert("URL:\n"+url); }
+async function adminAction(path,payload,okMsg){
+  try{
+    const r=await fetch(api(path),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(Object.assign({secret:ADMIN_SECRET},payload))});
+    const j=await r.json(); if(j.error){ alert("失敗: "+j.error); return false; }
+    if(okMsg) alert(okMsg); await adminRefresh(); return true;
+  }catch(e){ alert("接続失敗: "+e.message); return false; }
+}
+function adminReset(member){
+  const t=prompt("「"+member+"」の新しいトークン（4文字以上）",""); if(t===null) return;
+  if((t||"").length<4){ alert("4文字以上で入力してください"); return; }
+  adminAction("/api/admin/reset",{member,token:t},"トークンを再設定しました");
+}
+function adminDel(member){
+  if(!confirm("「"+member+"」を完全に削除しますか？\nデータ・SNS認証・トークンがすべて消えます。")) return;
+  adminAction("/api/admin/delete",{member},"削除しました");
+}
+function adminCreateModal(){
+  openModal(`<h3>ワークスペース作成</h3>
+    <div class="field"><label>名前（英小文字・数字・_ -、2〜32文字）</label><input id="ac_name" placeholder="例: alice"></div>
+    <div class="field"><label>初期トークン（4文字以上）</label><input id="ac_tok" placeholder="メンバーに渡す合言葉"></div>
+    <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="adminCreate()">作成</button></div>`);
+}
+async function adminCreate(){
+  const n=(val("ac_name")||"").toLowerCase().trim(), t=val("ac_tok");
+  if(!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(n)){ alert("名前が不正です（英小文字・数字・_ -、2〜32文字）"); return; }
+  if((t||"").length<4){ alert("トークンは4文字以上"); return; }
+  if(await adminAction("/api/admin/create",{member:n,token:t},"作成しました:\n"+location.origin+"/w/"+n)) closeModal();
+}
+
+boot();
+</script>
+</body>
+</html>

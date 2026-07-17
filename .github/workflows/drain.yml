@@ -1,0 +1,19 @@
+name: SNS DM auto-drain
+# DMキャンペーンと予約投稿を定期実行する（Render Cronの代替）
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # 30分ごと（UTC）
+  workflow_dispatch: {}       # 手動実行も可
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /drain
+        env:
+          ENGINE_URL: ${{ secrets.ENGINE_URL }}       # 例: https://xxxx.onrender.com
+          ENGINE_SECRET: ${{ secrets.ENGINE_SECRET }}
+        run: |
+          curl -sS -X POST "$ENGINE_URL/drain" \
+            -H "Content-Type: application/json" \
+            -d "{\"secret\":\"$ENGINE_SECRET\"}"

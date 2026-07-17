@@ -1,0 +1,13 @@
+# データ・秘密情報
+data/
+*.json.tmp
+ws/
+send_state.json
+campaigns.json
+posts.json
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc

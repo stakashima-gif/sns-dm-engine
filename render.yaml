@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: sns-dm-engine
+    runtime: python
+    plan: starter          # 常時起動＋永続ディスクが必要なため free 不可
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn server:app --timeout 120 --workers 1
+    envVars:
+      - key: ENGINE_SECRET      # cron(/drain)用マスター
+        sync: false
+      - key: DATA_DIR
+        value: /var/data
+      - key: ANTHROPIC_API_KEY  # 文面生成（全ワークスペース共通）
+        sync: false
+    disk:
+      name: dm-state            # ワークスペース別データを永続化
+      mountPath: /var/data
+      sizeGB: 1
+
+  # cron: 30分ごとに /drain（全ワークスペースのDMキャンペーン＋予約投稿を自動処理）
+  - type: cron
+    name: sns-dm-drain
+    runtime: python
+    schedule: "*/30 * * * *"
+    buildCommand: pip install requests
+    startCommand: >
+      python -c "import os,requests;
+      requests.post(os.environ['ENGINE_URL']+'/drain',
+      json={'secret':os.environ['ENGINE_SECRET']}, timeout=120)"
+    envVars:
+      - key: ENGINE_URL         # 例: https://sns-dm-engine.onrender.com
+        sync: false
+      - key: ENGINE_SECRET      # webサービスと同じマスター
+        sync: false
