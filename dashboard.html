@@ -185,6 +185,29 @@ function effectiveCap(pf){
 }
 function remaining(pf){ return Math.max(0, effectiveCap(pf) - sentToday(pf)); }
 
+/* 被り（重複）判定用キー */
+function dupKey(platform, handle){ return platform+"|"+(handle||"").toLowerCase().trim(); }
+/* 送信済みハンドル集合（全リスト横断） */
+function globalSentHandles(){
+  return new Set(DB.logs.filter(l=>l.status==="sent").map(l=>dupKey(l.platform, l.handle)));
+}
+/* リストの送信計画：被りを除外した pending と、被りリスト dups を返す */
+function computeSendPlan(list){
+  const sentIds = new Set(DB.logs.filter(l=>l.listId===list.id && l.status==="sent").map(l=>l.contactId));
+  const gSent = globalSentHandles();
+  const targets = list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(Boolean);
+  const seen = new Set();
+  const pending=[], dups=[];
+  for(const c of targets){
+    if(sentIds.has(c.id)) continue;              // このリストで送信済み
+    const k = dupKey(c.platform, c.handle);
+    if(seen.has(k)){ dups.push({c, reason:"リスト内重複"}); continue; }
+    if(gSent.has(k)){ dups.push({c, reason:"他リストで送信済み"}); continue; }
+    seen.add(k); pending.push(c);
+  }
+  return { targets, sentCount:sentIds.size, pending, dups };
+}
+
 /* ---------- ルーティング ---------- */
 const PAGES = [
   {id:"dashboard", icon:"📊", label:"ダッシュボード"},
@@ -351,7 +374,14 @@ function saveContact(id){
     tags:val("c_tags").split(",").map(s=>s.trim()).filter(Boolean)
   };
   if(id){ const i=DB.contacts.findIndex(x=>x.id===id); DB.contacts[i]=obj; }
-  else DB.contacts.unshift(obj);
+  else {
+    // 被りチェック：同一SNS・同一ハンドルが既存
+    const k=dupKey(obj.platform, obj.handle);
+    if(DB.contacts.some(c=>dupKey(c.platform,c.handle)===k)){
+      if(!confirm(`⚠️ 同じSNS・同じハンドル（${esc(obj.handle)}）のターゲットが既に登録されています。\nそれでも追加しますか？`)) return;
+    }
+    DB.contacts.unshift(obj);
+  }
   save(); closeModal(); render();
 }
 function delContact(id){ if(confirm("削除しますか？")){ DB.contacts=DB.contacts.filter(c=>c.id!==id); save(); render(); } }
@@ -369,17 +399,22 @@ instagram,@hanae_beauty,,美容サロン,大阪,美容"></textarea>
 }
 function doImport(){
   const lines = val("csv").split("\n").map(l=>l.trim()).filter(Boolean);
-  let n=0;
+  const existing = new Set(DB.contacts.map(c=>dupKey(c.platform,c.handle)));
+  const seen = new Set();
+  let n=0, dup=0;
   lines.forEach(line=>{
     const parts = line.split(",").map(s=>s.trim());
     if(parts[0]==="platform") return;
     const pf = parts[0]?.toLowerCase();
     if(!PLATFORMS[pf] || !parts[1]) return;
+    const k = dupKey(pf, parts[1]);
+    if(existing.has(k) || seen.has(k)){ dup++; return; }   // 被りはスキップ
+    seen.add(k);
     DB.contacts.unshift({id:uid(),platform:pf,handle:parts[1],name:parts[2]||"",company:parts[3]||"",region:parts[4]||"",tags:(parts[5]||"").split(";").map(s=>s.trim()).filter(Boolean)});
     n++;
   });
   save(); closeModal(); render();
-  alert(n+"件インポートしました");
+  alert(`${n}件インポートしました。`+(dup>0?`\n\n⚠️ 被り ${dup}件（同一SNS・同一ハンドルが既存/重複）はスキップしました。`:''));
 }
 
 /* ---------- セグメント / リスト ---------- */
@@ -473,9 +508,24 @@ function saveList(id){
     const l=DB.lists.find(x=>x.id===id);
     l.name=name; l.platform=val("l_pf"); l.template=val("l_tpl");
   }else{
-    const ids=segMatches().map(c=>c.id);
+    const pf=val("l_pf");
+    const matched=segMatches();
+    const ids=matched.map(c=>c.id);
     if(!ids.length){ if(!confirm("該当0件です。空のリストを作成しますか？")) return; }
-    DB.lists.unshift({id:uid(),name,platform:val("l_pf"),template:val("l_tpl"),contactIds:ids,createdAt:new Date().toISOString()});
+    else {
+      // 被りチェック（リスト内重複 + 送信済みとの重複）
+      const gSent=globalSentHandles();
+      const seen=new Set(); let internalDup=0, sentDup=0;
+      matched.forEach(c=>{
+        const k=dupKey(c.platform||pf, c.handle);
+        if(seen.has(k)) internalDup++; else seen.add(k);
+        if(gSent.has(k)) sentDup++;
+      });
+      if(internalDup>0 || sentDup>0){
+        if(!confirm(`⚠️ このリストに被りがあります。\n・リスト内で重複: ${internalDup}件\n・すでに送信済みと重複: ${sentDup}件\n\nこのまま作成しますか？（送信時に自動で重複除外されます）`)) return;
+      }
+    }
+    DB.lists.unshift({id:uid(),name,platform:pf,template:val("l_tpl"),contactIds:ids,createdAt:new Date().toISOString()});
   }
   save(); closeModal(); render();
 }
@@ -514,13 +564,20 @@ function pageQueue(){
     body=`<div class="empty">上のプルダウンから送信するリストを選択してください。</div>`;
   }else{
     const pf=list.platform, cap=effectiveCap(pf), used=sentToday(pf), rem=remaining(pf);
-    const sentIds=new Set(DB.logs.filter(l=>l.listId===list.id&&l.status==="sent").map(l=>l.contactId));
-    const targets=list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(Boolean);
-    const pending=targets.filter(c=>!sentIds.has(c.id));
+    const plan=computeSendPlan(list);
+    const {targets, sentCount, pending, dups}=plan;
     const willSend=Math.min(pending.length, rem);
     const apiWarn = !PLATFORMS[pf].api;
 
-    const preview = pending.slice(0,50).map((c,i)=>{
+    // 被り警告バナー
+    const dupWarn = dups.length? `<div class="hint warn" style="margin-bottom:16px">⚠️ <b>被り ${dups.length}件</b>を検出（${dups.filter(d=>d.reason==="他リストで送信済み").length}件=他リストで送信済み / ${dups.filter(d=>d.reason==="リスト内重複").length}件=リスト内重複）。二重送信防止のため<b>自動で送信対象から除外</b>します。</div>` : '';
+
+    // 被り行 + 送信対象行のプレビュー
+    const dupRows = dups.slice(0,50).map(d=>`<tr style="opacity:.55">
+        <td>–</td><td><b>${esc(d.c.handle)}</b></td><td>${esc(d.c.name)||'-'}</td>
+        <td class="mini">${esc(d.reason)}</td>
+        <td><span class="badge b-warn">被り・除外</span></td></tr>`).join("");
+    const preview = dupRows + pending.slice(0,50).map((c,i)=>{
       const blocked = i>=rem;
       return `<tr style="${blocked?'opacity:.4':''}">
         <td>${i+1}</td><td><b>${esc(c.handle)}</b></td><td>${esc(c.name)||'-'}</td>
@@ -529,13 +586,15 @@ function pageQueue(){
     }).join("");
 
     body=`
+    ${dupWarn}
     <div class="split" style="margin-bottom:16px">
       <div class="card">
         <h3 style="color:var(--txt);font-size:14px">送信プレビュー</h3>
         <div class="stat-inline">
           <div><span>${targets.length}</span><small>リスト総数</small></div>
-          <div><span>${sentIds.size}</span><small>送信済み</small></div>
-          <div><span>${pending.length}</span><small>未送信</small></div>
+          <div><span>${sentCount}</span><small>送信済み</small></div>
+          <div><span style="color:${dups.length?'var(--warn)':'inherit'}">${dups.length}</span><small>被り除外</small></div>
+          <div><span>${pending.length}</span><small>送信可能</small></div>
           <div><span style="color:${willSend<pending.length?'var(--warn)':'var(--accent2)'}">${willSend}</span><small>本日送信可</small></div>
         </div>
       </div>
@@ -550,7 +609,7 @@ function pageQueue(){
 
     <div class="toolbar">
       <button class="btn" onclick="runSend('${list.id}')" ${willSend<=0?'disabled':''}>${willSend}件を送信</button>
-      ${sentIds.size>0?`<button class="btn ghost sm" onclick="markReplies('${list.id}')">返信を記録</button>`:''}
+      ${sentCount>0?`<button class="btn ghost sm" onclick="markReplies('${list.id}')">返信を記録</button>`:''}
       <div class="spacer"></div>
       <span class="mini">上限に達すると自動停止します</span>
     </div>
@@ -576,11 +635,11 @@ function fillTpl(tpl,c){ return (tpl||"").replace(/\{\{name\}\}/g,c.name||c.hand
 async function runSend(listId){
   const list=DB.lists.find(l=>l.id===listId); const pf=list.platform;
   let rem=remaining(pf);
-  const sentIds=new Set(DB.logs.filter(l=>l.listId===list.id&&l.status==="sent").map(l=>l.contactId));
-  const pending=list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(c=>c&&!sentIds.has(c.id));
+  const {pending, dups}=computeSendPlan(list);   // 被りは除外済み
   const n=Math.min(pending.length,rem);
-  if(n<=0){ alert("本日の送信可能数が0です"); return; }
+  if(n<=0){ alert(dups.length? `送信可能な宛先がありません。\n\n⚠️ 被り${dups.length}件は二重送信防止のため除外されています。` : "本日の送信可能数が0です"); return; }
   const batch=pending.slice(0,n);
+  if(dups.length && !confirm(`⚠️ 被り ${dups.length}件（他リストで送信済み／重複）を検出しました。\nこれらを除外して ${n}件に送信します。続けますか？`)) return;
 
   /* ---- 実API送信モード（サーバー配信=ワークスペース時） ---- */
   if(serverMode()){
