@@ -189,6 +189,64 @@ def build_sender(member, platform):
     raise SenderError(f"未対応のSNSです: {platform}（DMは x / facebook / instagram）")
 
 
+# ---- ターゲット抽出（キーワード検索）----
+# 公式検索APIが実用になるのは X のみ。他SNSは検索API無し/DM不可のため非対応。
+EXTRACT_UNSUPPORTED = {
+    "instagram": "Instagramはハッシュタグ検索のみで、抽出したユーザーへのコールドDMが規約上できないため抽出非対応です。",
+    "facebook": "Facebookは公式のユーザー/投稿検索APIが無いため抽出非対応です。",
+    "tiktok": "TikTokは一般ユーザー検索APIが無いため抽出非対応です。",
+    "threads": "Threadsは公式検索APIが無いため抽出非対応です。",
+    "linkedin": "LinkedInは公式検索APIが無いため抽出非対応です。",
+}
+
+
+def x_search(session, keywords, want, region="", min_followers=0):
+    """X 公式APIでキーワード検索し、投稿者を抽出（要 Basic/Pro tier）。"""
+    query = keywords.strip() + " -is:retweet"
+    params = {
+        "query": query, "max_results": 100, "expansions": "author_id",
+        "user.fields": "name,username,location,public_metrics,description",
+    }
+    collected = {}
+    pages = 0
+    next_token = None
+    while len(collected) < want and pages < 5:
+        if next_token:
+            params["next_token"] = next_token
+        r = session.get("https://api.twitter.com/2/tweets/search/recent", params=params)
+        if r.status_code == 429:
+            raise SenderError("レート制限(429): 時間をおいて再試行してください")
+        if r.status_code == 403:
+            raise SenderError("検索APIの権限がありません（X APIのBasic/Proプランが必要です）")
+        if r.status_code != 200:
+            raise SenderError(f"検索失敗 {r.status_code}: {r.text[:180]}")
+        data = r.json()
+        for u in data.get("includes", {}).get("users", []):
+            uid = u.get("id")
+            if uid in collected:
+                continue
+            loc = u.get("location", "") or ""
+            fol = u.get("public_metrics", {}).get("followers_count", 0)
+            if region and region not in loc:
+                continue
+            if min_followers and fol < min_followers:
+                continue
+            collected[uid] = u
+            if len(collected) >= want:
+                break
+        next_token = data.get("meta", {}).get("next_token")
+        pages += 1
+        if not next_token:
+            break
+    return [{
+        "handle": "@" + u.get("username", ""),
+        "name": u.get("name", ""),
+        "company": (u.get("description", "") or "").replace("\n", " ")[:60],
+        "region": u.get("location", "") or "",
+        "followers": u.get("public_metrics", {}).get("followers_count", 0),
+    } for u in collected.values()]
+
+
 # ============================================================
 # Poster（自動投稿）
 # ============================================================
@@ -478,6 +536,32 @@ def send():
     return jsonify(platform=platform, results=results,
                    sent_today=sent_today(m, platform),
                    remaining=max(0, cap - sent_today(m, platform)))
+
+
+@app.route("/extract", methods=["POST"])
+def extract():
+    body = request.get_json(force=True, silent=True) or {}
+    m, err = _wsauth(body)
+    if err:
+        return jsonify(error=err[0]), err[1]
+    platform = body.get("platform", "x")
+    keywords = (body.get("keywords", "") or "").strip()
+    if not keywords:
+        return jsonify(error="キーワードを入力してください"), 400
+    if platform != "x":
+        return jsonify(supported=False,
+                       error=EXTRACT_UNSUPPORTED.get(platform, "このSNSは抽出非対応です。")), 200
+    want = min(int(body.get("count", 50) or 50), 200)
+    region = (body.get("region", "") or "").strip()
+    min_f = int(body.get("min_followers", 0) or 0)
+    try:
+        sender = build_sender(m, "x")
+        results = x_search(sender.session, keywords, want, region, min_f)
+    except SenderError as e:
+        return jsonify(error=str(e)), 400
+    except Exception as e:
+        return jsonify(error=f"抽出失敗: {e}"), 500
+    return jsonify(supported=True, candidates=results, count=len(results))
 
 
 @app.route("/status")

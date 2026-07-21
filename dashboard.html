@@ -328,8 +328,9 @@ function pageContacts(){
   <div class="page-head"><div><h2>ターゲット管理</h2>
     <p>送信対象を登録・タグ付けします（${DB.contacts.length}件）</p></div>
     <div style="display:flex;gap:8px">
+      <button class="btn" onclick="extractModal()">🔍 抽出</button>
       <button class="btn sec" onclick="importModal()">📥 CSVインポート</button>
-      <button class="btn" onclick="editContact()">＋ 追加</button></div></div>
+      <button class="btn sec" onclick="editContact()">＋ 手動追加</button></div></div>
 
   <div class="toolbar">
     <input placeholder="検索: ハンドル/名前/会社" value="${esc(contactFilter.q)}" oninput="contactFilter.q=this.value;render()">
@@ -415,6 +416,92 @@ function doImport(){
   });
   save(); closeModal(); render();
   alert(`${n}件インポートしました。`+(dup>0?`\n\n⚠️ 被り ${dup}件（同一SNS・同一ハンドルが既存/重複）はスキップしました。`:''));
+}
+
+/* ---------- ターゲット抽出（キーワード検索でリスト化） ---------- */
+let extractForm={platform:"x",keywords:"",region:"",minFollowers:0,count:50,tag:""};
+let extractResults=[];
+function extractModal(){
+  extractResults=[];
+  const pfOpts=Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${extractForm.platform===k?'selected':''}>${v.name}</option>`).join("");
+  openModal(`
+    <h3>ターゲット抽出（キーワード検索）</h3>
+    <div class="hint">キーワードに合う投稿者を抽出してリスト化します。<b>実際に検索できるのはX（公式API）のみ</b>で、他SNSは公式検索APIが無いためCSV/手動をご利用ください。年齢での絞り込みは非対応です。</div>
+    <div class="field"><label>SNS</label><select id="ex_pf" onchange="extractForm.platform=this.value;exToggle()">${pfOpts}</select></div>
+    <div class="field"><label>キーワード（必須／スペース区切りでAND、#タグ可）</label>
+      <input id="ex_kw" value="${esc(extractForm.keywords)}" placeholder="例: 美容 サロン / #EC / 起業"></div>
+    <div class="row">
+      <div class="field"><label>地域（任意・Xのみ）</label><input id="ex_region" value="${esc(extractForm.region)}" placeholder="東京 / 大阪 …"></div>
+      <div class="field"><label>最小フォロワー数（任意・Xのみ）</label><input id="ex_minf" type="number" value="${extractForm.minFollowers||''}" placeholder="例: 500"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>取得件数（最大200）</label><input id="ex_count" type="number" value="${extractForm.count}" min="1" max="200"></div>
+      <div class="field"><label>付与するタグ（任意）</label><input id="ex_tag" value="${esc(extractForm.tag)}" placeholder="抽出, 見込み"></div>
+    </div>
+    <div id="ex_note" class="mini" style="margin-bottom:8px"></div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">閉じる</button>
+      <button class="btn" id="ex_run" onclick="runExtract()">抽出する</button></div>
+    <div id="ex_results" style="margin-top:16px"></div>`);
+  exToggle();
+}
+function exToggle(){
+  const note=document.getElementById("ex_note");
+  if(extractForm.platform!=="x"){ note.textContent="⚠️ このSNSは公式検索APIが無いため抽出できません。CSVインポート/手動追加をご利用ください。"; note.style.color="var(--warn)"; }
+  else { note.textContent="Xの公式検索APIを使用します（要 Basic/Pro プラン）。"; note.style.color="var(--muted)"; }
+}
+async function runExtract(){
+  if(!serverMode()){ alert("抽出はチームの共有URL（.../w/名前）から利用してください（設定でXのAPIキーを登録した状態で）"); return; }
+  extractForm={platform:val("ex_pf"),keywords:val("ex_kw").trim(),region:val("ex_region").trim(),
+    minFollowers:+val("ex_minf")||0,count:Math.min(+val("ex_count")||50,200),tag:val("ex_tag").trim()};
+  if(!extractForm.keywords){ alert("キーワードを入力してください"); return; }
+  const res=document.getElementById("ex_results");
+  res.innerHTML='<div class="mini">抽出中…（Xの検索には少し時間がかかります）</div>';
+  try{
+    const r=await fetchT(api("/extract"),{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(wsCreds({platform:extractForm.platform,keywords:extractForm.keywords,region:extractForm.region,min_followers:extractForm.minFollowers,count:extractForm.count}))},120000);
+    const j=await r.json();
+    if(j.supported===false){ res.innerHTML=`<div class="hint warn">${esc(j.error)}</div>`; return; }
+    if(j.error){ res.innerHTML=`<div class="hint warn">抽出失敗: ${esc(j.error)}</div>`; return; }
+    extractResults=j.candidates||[];
+    renderExtractResults();
+  }catch(e){ res.innerHTML=`<div class="hint warn">接続失敗: ${esc(e.message)}</div>`; }
+}
+function renderExtractResults(){
+  const res=document.getElementById("ex_results");
+  if(!extractResults.length){ res.innerHTML='<div class="empty">該当が見つかりませんでした。キーワードや条件を変えてお試しください。</div>'; return; }
+  const rows=extractResults.slice(0,200).map((c,i)=>`<tr>
+    <td>${i+1}</td><td><b>${esc(c.handle)}</b></td><td>${esc(c.name)||'-'}</td>
+    <td class="mini">${esc(c.region)||'-'}</td><td>${(c.followers||0).toLocaleString()}</td></tr>`).join("");
+  res.innerHTML=`
+    <div class="hint">✅ ${extractResults.length}件を抽出。リスト化するとターゲットに自動登録されます（被りは自動除外）。</div>
+    <div class="field"><label>リスト名</label><input id="ex_lname" value="${esc(extractForm.keywords)} 抽出"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button class="btn" onclick="saveExtract(true)">リストとして保存</button>
+      <button class="btn sec" onclick="saveExtract(false)">ターゲットに追加のみ</button></div>
+    <div class="tbl-wrap"><div class="tbl-scroll" style="max-height:280px"><table>
+      <thead><tr><th>#</th><th>ハンドル</th><th>名前</th><th>地域</th><th>フォロワー</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+}
+function saveExtract(asList){
+  const pf=extractForm.platform;
+  const tags=extractForm.tag?extractForm.tag.split(",").map(s=>s.trim()).filter(Boolean):[];
+  const existing=new Map(DB.contacts.map(c=>[dupKey(c.platform,c.handle),c.id]));
+  const ids=[]; let added=0, dup=0;
+  extractResults.forEach(c=>{
+    const k=dupKey(pf,c.handle);
+    if(existing.has(k)){ ids.push(existing.get(k)); dup++; return; }
+    const id=uid();
+    DB.contacts.unshift({id,platform:pf,handle:c.handle,name:c.name||"",company:c.company||"",region:c.region||"",tags:tags.slice()});
+    existing.set(k,id); ids.push(id); added++;
+  });
+  if(asList){
+    const name=(val("ex_lname")||"").trim()||"抽出リスト";
+    const uniqIds=[...new Set(ids)];
+    DB.lists.unshift({id:uid(),name,platform:pf,template:"こんにちは{{name}}さん、\n\n",contactIds:uniqIds,createdAt:new Date().toISOString()});
+  }
+  save(); closeModal(); render();
+  alert(`${added}件を新規追加${dup>0?`（既存${dup}件は流用）`:''}${asList?'し、リストを作成しました':'しました'}。`);
 }
 
 /* ---------- セグメント / リスト ---------- */
