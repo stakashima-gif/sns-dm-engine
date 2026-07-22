@@ -328,9 +328,10 @@ function pageContacts(){
   <div class="page-head"><div><h2>ターゲット管理</h2>
     <p>送信対象を登録・タグ付けします（${DB.contacts.length}件）</p></div>
     <div style="display:flex;gap:8px">
-      <button class="btn" onclick="extractModal()">🔍 抽出</button>
-      <button class="btn sec" onclick="importModal()">📥 CSVインポート</button>
-      <button class="btn sec" onclick="editContact()">＋ 手動追加</button></div></div>
+      <button class="btn" onclick="pasteModal()">📋 貼り付け登録</button>
+      <button class="btn sec" onclick="extractModal()">🔍 キーワード抽出</button>
+      <button class="btn sec" onclick="importModal()">📥 CSV</button>
+      <button class="btn sec" onclick="editContact()">＋ 手動</button></div></div>
 
   <div class="toolbar">
     <input placeholder="検索: ハンドル/名前/会社" value="${esc(contactFilter.q)}" oninput="contactFilter.q=this.value;render()">
@@ -447,7 +448,7 @@ function extractModal(){
 }
 function exToggle(){
   const note=document.getElementById("ex_note");
-  if(extractForm.platform!=="x"){ note.textContent="⚠️ このSNSは公式検索APIが無いため抽出できません。CSVインポート/手動追加をご利用ください。"; note.style.color="var(--warn)"; }
+  if(extractForm.platform!=="x"){ note.textContent="⚠️ このSNSは公式検索APIが無いため自動抽出できません。「📋 貼り付け登録」で手動リサーチした@ハンドルを一括登録してください。"; note.style.color="var(--warn)"; }
   else { note.textContent="Xの公式検索APIを使用します（要 Basic/Pro プラン）。"; note.style.color="var(--muted)"; }
 }
 async function runExtract(){
@@ -502,6 +503,61 @@ function saveExtract(asList){
   }
   save(); closeModal(); render();
   alert(`${added}件を新規追加${dup>0?`（既存${dup}件は流用）`:''}${asList?'し、リストを作成しました':'しました'}。`);
+}
+
+/* ---------- @ハンドル貼り付け登録（無料・手動リサーチ用） ---------- */
+function parseHandles(text){
+  return [...new Set(
+    (text||"").split(/[\s,、，\n\r]+/).map(s=>s.trim()).filter(Boolean)
+      .map(s=>s.replace(/^https?:\/\/(www\.)?(twitter|x)\.com\//i,"@").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"@")) // URL貼付にも対応
+      .map(s=>s.replace(/\/.*$/,""))            // URL末尾除去
+      .map(s=>"@"+s.replace(/^@+/,""))          // 先頭@を正規化
+      .filter(s=>s.length>1)
+  )];
+}
+function pasteModal(){
+  const pfOpts=Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${k==='x'?'selected':''}>${v.name}</option>`).join("");
+  openModal(`
+    <h3>@ハンドルを貼り付けて登録</h3>
+    <div class="hint">手動で見つけたアカウントの<b>@ユーザー名</b>を貼り付けて一括登録します（無料・規約内）。<br>
+      X → <a href="https://twitter.com/search-advanced" target="_blank">高度な検索</a>、Instagram → アプリの発見/ハッシュタグ で探せます。URLを貼ってもOK。</div>
+    <div class="field"><label>SNS</label><select id="pa_pf">${pfOpts}</select></div>
+    <div class="field"><label>@ハンドル（改行・カンマ・スペース区切り／URLも可）</label>
+      <textarea id="pa_handles" style="min-height:130px" placeholder="@taro_beauty
+@osaka_salon
+https://x.com/tokyo_ec"></textarea>
+      <div id="pa_count" class="mini" style="margin-top:4px"></div></div>
+    <div class="row">
+      <div class="field"><label>付与するタグ（任意）</label><input id="pa_tag" placeholder="美容, 見込み"></div>
+      <div class="field"><label>リスト名（入れるとリスト化）</label><input id="pa_lname" placeholder="例: 美容・東京"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" onclick="closeModal()">閉じる</button>
+      <button class="btn" onclick="savePaste()">登録する</button></div>`);
+  const ta=document.getElementById("pa_handles");
+  const upd=()=>{ const el=document.getElementById("pa_count"); if(el) el.textContent=parseHandles(ta.value).length+"件を検出"; };
+  ta.addEventListener("input",upd); upd();
+}
+function savePaste(){
+  const pf=val("pa_pf");
+  const handles=parseHandles(val("pa_handles"));
+  if(!handles.length){ alert("@ハンドルを入力してください"); return; }
+  const tags=val("pa_tag").split(",").map(s=>s.trim()).filter(Boolean);
+  const listName=val("pa_lname").trim();
+  const existing=new Map(DB.contacts.map(c=>[dupKey(c.platform,c.handle),c.id]));
+  const ids=[]; let added=0, dup=0;
+  handles.forEach(h=>{
+    const k=dupKey(pf,h);
+    if(existing.has(k)){ ids.push(existing.get(k)); dup++; return; }
+    const id=uid();
+    DB.contacts.unshift({id,platform:pf,handle:h,name:"",company:"",region:"",tags:tags.slice()});
+    existing.set(k,id); ids.push(id); added++;
+  });
+  if(listName){
+    DB.lists.unshift({id:uid(),name:listName,platform:pf,template:"こんにちは{{name}}さん、\n\n",contactIds:[...new Set(ids)],createdAt:new Date().toISOString()});
+  }
+  save(); closeModal(); render();
+  alert(`${added}件を新規登録${dup>0?`（既存${dup}件は流用）`:''}${listName?'し、リストを作成しました':'しました'}。`);
 }
 
 /* ---------- セグメント / リスト ---------- */
