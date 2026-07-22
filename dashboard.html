@@ -247,7 +247,7 @@ function render(){
     queue:pageQueue, posts:pagePosts, logs:pageLogs, settings:pageSettings
   }[current])();
   if(current==="dashboard") drawBars();
-  if(current==="posts") loadServerPosts();
+  if(current==="posts"){ loadServerPosts(); loadAutoPlans(); }
   if(current==="settings") loadCreds();
 }
 
@@ -895,6 +895,17 @@ function pagePosts(){
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div><h3 style="color:var(--txt);font-size:14px;margin:0">定期自動投稿（完全自動）</h3>
+        <p class="mini" style="margin:2px 0 0">テーマと頻度を設定すると、cronが定期的にAI生成→自動投稿します（放置でOK）。</p></div>
+      <button class="btn sm" onclick="autoPlanModal()" ${engineReady()?'':'disabled'}>＋ プラン作成</button></div>
+    <div class="tbl-scroll"><table>
+      <thead><tr><th>SNS</th><th>テーマ</th><th>頻度</th><th>時刻</th><th>最終投稿</th><th>ON/OFF</th><th></th></tr></thead>
+      <tbody id="apBody">${apRows()}</tbody>
+    </table></div>
+  </div>
+
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <h3 style="color:var(--txt);font-size:14px;margin:0">予約・投稿履歴</h3>
@@ -904,6 +915,70 @@ function pagePosts(){
       <tbody id="spBody">${spRows()}</tbody>
     </table></div>
   </div>`;
+}
+/* 定期自動投稿プラン */
+let autoPlans=[];
+const AP_FREQ={1:'毎日',2:'2日に1回',3:'3日に1回',7:'週1回'};
+function apRows(){
+  if(!autoPlans.length) return '<tr><td colspan="7"><div class="empty">プランがありません。「＋プラン作成」で定期投稿を設定できます。</div></td></tr>';
+  return autoPlans.map(p=>`<tr>
+    <td>${pfPill(p.platform)}</td>
+    <td class="mini">${esc((p.brief||'').slice(0,36))}${(p.brief||'').length>36?'…':''}</td>
+    <td>${AP_FREQ[p.interval_days]||(p.interval_days+'日に1回')}</td>
+    <td>${p.hour}:00</td>
+    <td class="mini">${p.last_posted?esc(p.last_posted.slice(0,16).replace('T',' ')):'—'}${p.last_error?`<br><span style="color:var(--danger)">${esc((p.last_error||'').slice(0,40))}</span>`:''}</td>
+    <td><div class="toggle ${p.active?'on':''}" onclick="toggleAutoPlan('${p.id}',${!p.active})"><i></i></div></td>
+    <td style="text-align:right"><button class="btn ghost sm" onclick="delAutoPlan('${p.id}')">✕</button></td>
+  </tr>`).join("");
+}
+async function loadAutoPlans(){
+  if(!engineReady()){ autoPlans=[]; return; }
+  try{ const r=await fetchT(api("/autoposts"),{headers:wsHeaders()},15000); const j=await r.json(); autoPlans=j.plans||[];
+    const b=document.getElementById("apBody"); if(b) b.innerHTML=apRows(); }catch(e){}
+}
+function autoPlanModal(){
+  const pfOpts=POST_PF.map(k=>`<option value="${k}" ${k==='x'?'selected':''}>${PLATFORMS[k].name}</option>`).join("");
+  openModal(`
+    <h3>定期自動投稿プラン</h3>
+    <div class="hint">設定したテーマでcronがAI生成→自動投稿します。ANTHROPIC_API_KEY と 各SNSの投稿権限が必要です。</div>
+    <div class="row">
+      <div class="field"><label>投稿先SNS</label><select id="ap_pf" onchange="apImgToggle()">${pfOpts}</select></div>
+      <div class="field"><label>頻度</label><select id="ap_freq">
+        <option value="1">毎日</option><option value="2">2日に1回</option><option value="3">3日に1回</option><option value="7">週1回</option></select></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>投稿時刻（JST・この時刻以降）</label><input type="number" id="ap_hour" min="0" max="23" value="10"></div>
+      <div class="field"><label class="checkbox" style="margin-top:22px"><input type="checkbox" id="ap_tags" checked>ハッシュタグを付ける</label></div>
+    </div>
+    <div class="field"><label>投稿テーマ・指示</label>
+      <textarea id="ap_brief" placeholder="例）美容サロンの集客。季節の肌ケアTipsとキャンペーンをバランスよく。親しみやすいトーンで毎日1本。"></textarea></div>
+    <div class="field"><label>トーン</label><input id="ap_tone" placeholder="親しみやすい / 専門的 など"></div>
+    <div class="field" id="ap_img_field" style="display:none"><label>画像URL（Instagram必須・1行ずつ／順番にローテーション）</label>
+      <textarea id="ap_imgs" placeholder="https://.../1.jpg
+https://.../2.jpg"></textarea></div>
+    <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">キャンセル</button>
+      <button class="btn" onclick="saveAutoPlan()">作成</button></div>`);
+  apImgToggle();
+}
+function apImgToggle(){ const f=document.getElementById("ap_img_field"); if(f) f.style.display=(val("ap_pf")==="instagram")?"block":"none"; }
+async function saveAutoPlan(){
+  const platform=val("ap_pf"); const brief=val("ap_brief").trim();
+  if(!brief){ alert("投稿テーマを入力してください"); return; }
+  const image_urls=platform==="instagram"?(val("ap_imgs")||"").split(/\n+/).map(s=>s.trim()).filter(Boolean):[];
+  if(platform==="instagram" && !image_urls.length){ alert("Instagramは画像URLが1つ以上必要です"); return; }
+  try{
+    const r=await fetchT(api("/autoposts"),{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(wsCreds({platform,brief,tone:val("ap_tone").trim(),hashtags:document.getElementById("ap_tags").checked,interval_days:+val("ap_freq"),hour:+val("ap_hour")||10,image_urls}))});
+    const j=await r.json(); if(j.error){ alert("作成失敗: "+j.error); return; }
+    closeModal(); loadAutoPlans(); alert("プランを作成しました。指定時刻以降に自動投稿されます。");
+  }catch(e){ alert("接続失敗: "+e.message); }
+}
+async function toggleAutoPlan(id,active){
+  try{ await fetchT(api("/autoposts"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(wsCreds({id,active}))}); loadAutoPlans(); }catch(e){ alert("失敗: "+e.message); }
+}
+async function delAutoPlan(id){
+  if(!confirm("このプランを削除しますか？")) return;
+  try{ await fetchT(api("/autoposts/"+id),{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify(wsCreds())}); loadAutoPlans(); }catch(e){ alert("失敗: "+e.message); }
 }
 
 async function genPosts(){
