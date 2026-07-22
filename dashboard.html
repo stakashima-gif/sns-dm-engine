@@ -448,8 +448,16 @@ function extractModal(){
 }
 function exToggle(){
   const note=document.getElementById("ex_note");
-  if(extractForm.platform!=="x"){ note.textContent="⚠️ このSNSは公式検索APIが無いため自動抽出できません。「📋 貼り付け登録」で手動リサーチした@ハンドルを一括登録してください。"; note.style.color="var(--warn)"; }
-  else { note.textContent="Xの公式検索APIを使用します（要 Basic/Pro プラン）。"; note.style.color="var(--muted)"; }
+  const btn=document.getElementById("ex_run");
+  if(extractForm.platform!=="x"){
+    note.innerHTML='⚠️ このSNSは<b>キーワード検索のAPIが存在しない</b>ため検索できません（Metaがユーザー検索を廃止済み）。<a style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="closeModal();pasteModal()">→ 「貼り付け登録」で手動の@ハンドルを一括登録する</a>';
+    note.style.color="var(--warn)";
+    if(btn){ btn.disabled=true; btn.textContent="このSNSは非対応"; }
+  }else{
+    note.textContent="Xの公式検索APIを使用します（要 Basic/Pro プラン）。";
+    note.style.color="var(--muted)";
+    if(btn){ btn.disabled=false; btn.textContent="抽出する"; }
+  }
 }
 async function runExtract(){
   if(!serverMode()){ alert("抽出はチームの共有URL（.../w/名前）から利用してください（設定でXのAPIキーを登録した状態で）"); return; }
