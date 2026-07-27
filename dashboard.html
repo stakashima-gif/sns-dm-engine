@@ -185,35 +185,12 @@ function effectiveCap(pf){
 }
 function remaining(pf){ return Math.max(0, effectiveCap(pf) - sentToday(pf)); }
 
-/* 被り（重複）判定用キー */
-function dupKey(platform, handle){ return platform+"|"+(handle||"").toLowerCase().trim(); }
-/* 送信済みハンドル集合（全リスト横断） */
-function globalSentHandles(){
-  return new Set(DB.logs.filter(l=>l.status==="sent").map(l=>dupKey(l.platform, l.handle)));
-}
-/* リストの送信計画：被りを除外した pending と、被りリスト dups を返す */
-function computeSendPlan(list){
-  const sentIds = new Set(DB.logs.filter(l=>l.listId===list.id && l.status==="sent").map(l=>l.contactId));
-  const gSent = globalSentHandles();
-  const targets = list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(Boolean);
-  const seen = new Set();
-  const pending=[], dups=[];
-  for(const c of targets){
-    if(sentIds.has(c.id)) continue;              // このリストで送信済み
-    const k = dupKey(c.platform, c.handle);
-    if(seen.has(k)){ dups.push({c, reason:"リスト内重複"}); continue; }
-    if(gSent.has(k)){ dups.push({c, reason:"他リストで送信済み"}); continue; }
-    seen.add(k); pending.push(c);
-  }
-  return { targets, sentCount:sentIds.size, pending, dups };
-}
-
 /* ---------- ルーティング ---------- */
 const PAGES = [
   {id:"dashboard", icon:"📊", label:"ダッシュボード"},
   {id:"contacts",  icon:"👥", label:"ターゲット"},
   {id:"segments",  icon:"🎯", label:"セグメント / リスト"},
-  {id:"queue",     icon:"📨", label:"送信"},
+  {id:"queue",     icon:"🚀", label:"送信キュー"},
   {id:"posts",     icon:"📢", label:"自動投稿"},
   {id:"logs",      icon:"📜", label:"送信ログ / 歩留"},
   {id:"settings",  icon:"⚙️", label:"設定"},
@@ -247,7 +224,7 @@ function render(){
     queue:pageQueue, posts:pagePosts, logs:pageLogs, settings:pageSettings
   }[current])();
   if(current==="dashboard") drawBars();
-  if(current==="posts"){ loadServerPosts(); loadAutoPlans(); }
+  if(current==="posts") loadServerPosts();
   if(current==="settings") loadCreds();
 }
 
@@ -280,7 +257,7 @@ function pageDashboard(){
   return `
   <div class="page-head"><div><h2>ダッシュボード</h2>
     <p>本日 ${todayStr()} ・ ガイドライン上限を自動監視しています</p></div>
-    <button class="btn" onclick="go('queue')">送信する</button></div>
+    <button class="btn" onclick="go('queue')">🚀 送信キューへ</button></div>
 
   <div class="grid cards" style="margin-bottom:16px">
     <div class="card"><h3>登録ターゲット</h3><div class="kpi">${totalContacts}<small> 件</small></div></div>
@@ -328,10 +305,8 @@ function pageContacts(){
   <div class="page-head"><div><h2>ターゲット管理</h2>
     <p>送信対象を登録・タグ付けします（${DB.contacts.length}件）</p></div>
     <div style="display:flex;gap:8px">
-      <button class="btn" onclick="pasteModal()">📋 貼り付け登録</button>
-      <button class="btn sec" onclick="extractModal()">🔍 キーワード抽出</button>
-      <button class="btn sec" onclick="importModal()">📥 CSV</button>
-      <button class="btn sec" onclick="editContact()">＋ 手動</button></div></div>
+      <button class="btn sec" onclick="importModal()">📥 CSVインポート</button>
+      <button class="btn" onclick="editContact()">＋ 追加</button></div></div>
 
   <div class="toolbar">
     <input placeholder="検索: ハンドル/名前/会社" value="${esc(contactFilter.q)}" oninput="contactFilter.q=this.value;render()">
@@ -376,14 +351,7 @@ function saveContact(id){
     tags:val("c_tags").split(",").map(s=>s.trim()).filter(Boolean)
   };
   if(id){ const i=DB.contacts.findIndex(x=>x.id===id); DB.contacts[i]=obj; }
-  else {
-    // 被りチェック：同一SNS・同一ハンドルが既存
-    const k=dupKey(obj.platform, obj.handle);
-    if(DB.contacts.some(c=>dupKey(c.platform,c.handle)===k)){
-      if(!confirm(`⚠️ 同じSNS・同じハンドル（${esc(obj.handle)}）のターゲットが既に登録されています。\nそれでも追加しますか？`)) return;
-    }
-    DB.contacts.unshift(obj);
-  }
+  else DB.contacts.unshift(obj);
   save(); closeModal(); render();
 }
 function delContact(id){ if(confirm("削除しますか？")){ DB.contacts=DB.contacts.filter(c=>c.id!==id); save(); render(); } }
@@ -401,171 +369,17 @@ instagram,@hanae_beauty,,美容サロン,大阪,美容"></textarea>
 }
 function doImport(){
   const lines = val("csv").split("\n").map(l=>l.trim()).filter(Boolean);
-  const existing = new Set(DB.contacts.map(c=>dupKey(c.platform,c.handle)));
-  const seen = new Set();
-  let n=0, dup=0;
+  let n=0;
   lines.forEach(line=>{
     const parts = line.split(",").map(s=>s.trim());
     if(parts[0]==="platform") return;
     const pf = parts[0]?.toLowerCase();
     if(!PLATFORMS[pf] || !parts[1]) return;
-    const k = dupKey(pf, parts[1]);
-    if(existing.has(k) || seen.has(k)){ dup++; return; }   // 被りはスキップ
-    seen.add(k);
     DB.contacts.unshift({id:uid(),platform:pf,handle:parts[1],name:parts[2]||"",company:parts[3]||"",region:parts[4]||"",tags:(parts[5]||"").split(";").map(s=>s.trim()).filter(Boolean)});
     n++;
   });
   save(); closeModal(); render();
-  alert(`${n}件インポートしました。`+(dup>0?`\n\n⚠️ 被り ${dup}件（同一SNS・同一ハンドルが既存/重複）はスキップしました。`:''));
-}
-
-/* ---------- ターゲット抽出（キーワード検索でリスト化） ---------- */
-let extractForm={platform:"x",keywords:"",region:"",minFollowers:0,count:50,tag:""};
-let extractResults=[];
-function extractModal(){
-  extractResults=[];
-  const pfOpts=Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${extractForm.platform===k?'selected':''}>${v.name}</option>`).join("");
-  openModal(`
-    <h3>ターゲット抽出（キーワード検索）</h3>
-    <div class="hint">キーワードに合う投稿者を抽出してリスト化します。<b>実際に検索できるのはX（公式API）のみ</b>で、他SNSは公式検索APIが無いためCSV/手動をご利用ください。年齢での絞り込みは非対応です。</div>
-    <div class="field"><label>SNS</label><select id="ex_pf" onchange="extractForm.platform=this.value;exToggle()">${pfOpts}</select></div>
-    <div class="field"><label>キーワード（必須／スペース区切りでAND、#タグ可）</label>
-      <input id="ex_kw" value="${esc(extractForm.keywords)}" placeholder="例: 美容 サロン / #EC / 起業"></div>
-    <div class="row">
-      <div class="field"><label>地域（任意・Xのみ）</label><input id="ex_region" value="${esc(extractForm.region)}" placeholder="東京 / 大阪 …"></div>
-      <div class="field"><label>最小フォロワー数（任意・Xのみ）</label><input id="ex_minf" type="number" value="${extractForm.minFollowers||''}" placeholder="例: 500"></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>取得件数（最大200）</label><input id="ex_count" type="number" value="${extractForm.count}" min="1" max="200"></div>
-      <div class="field"><label>付与するタグ（任意）</label><input id="ex_tag" value="${esc(extractForm.tag)}" placeholder="抽出, 見込み"></div>
-    </div>
-    <div id="ex_note" class="mini" style="margin-bottom:8px"></div>
-    <div class="modal-foot">
-      <button class="btn ghost" onclick="closeModal()">閉じる</button>
-      <button class="btn" id="ex_run" onclick="runExtract()">抽出する</button></div>
-    <div id="ex_results" style="margin-top:16px"></div>`);
-  exToggle();
-}
-function exToggle(){
-  const note=document.getElementById("ex_note");
-  const btn=document.getElementById("ex_run");
-  if(extractForm.platform!=="x"){
-    note.innerHTML='⚠️ このSNSは<b>キーワード検索のAPIが存在しない</b>ため検索できません（Metaがユーザー検索を廃止済み）。<a style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="closeModal();pasteModal()">→ 「貼り付け登録」で手動の@ハンドルを一括登録する</a>';
-    note.style.color="var(--warn)";
-    if(btn){ btn.disabled=true; btn.textContent="このSNSは非対応"; }
-  }else{
-    note.textContent="Xの公式検索APIを使用します（要 Basic/Pro プラン）。";
-    note.style.color="var(--muted)";
-    if(btn){ btn.disabled=false; btn.textContent="抽出する"; }
-  }
-}
-async function runExtract(){
-  if(!serverMode()){ alert("抽出はチームの共有URL（.../w/名前）から利用してください（設定でXのAPIキーを登録した状態で）"); return; }
-  extractForm={platform:val("ex_pf"),keywords:val("ex_kw").trim(),region:val("ex_region").trim(),
-    minFollowers:+val("ex_minf")||0,count:Math.min(+val("ex_count")||50,200),tag:val("ex_tag").trim()};
-  if(!extractForm.keywords){ alert("キーワードを入力してください"); return; }
-  const res=document.getElementById("ex_results");
-  res.innerHTML='<div class="mini">抽出中…（Xの検索には少し時間がかかります）</div>';
-  try{
-    const r=await fetchT(api("/extract"),{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(wsCreds({platform:extractForm.platform,keywords:extractForm.keywords,region:extractForm.region,min_followers:extractForm.minFollowers,count:extractForm.count}))},120000);
-    const j=await r.json();
-    if(j.supported===false){ res.innerHTML=`<div class="hint warn">${esc(j.error)}</div>`; return; }
-    if(j.error){ res.innerHTML=`<div class="hint warn">抽出失敗: ${esc(j.error)}</div>`; return; }
-    extractResults=j.candidates||[];
-    renderExtractResults();
-  }catch(e){ res.innerHTML=`<div class="hint warn">接続失敗: ${esc(e.message)}</div>`; }
-}
-function renderExtractResults(){
-  const res=document.getElementById("ex_results");
-  if(!extractResults.length){ res.innerHTML='<div class="empty">該当が見つかりませんでした。キーワードや条件を変えてお試しください。</div>'; return; }
-  const rows=extractResults.slice(0,200).map((c,i)=>`<tr>
-    <td>${i+1}</td><td><b>${esc(c.handle)}</b></td><td>${esc(c.name)||'-'}</td>
-    <td class="mini">${esc(c.region)||'-'}</td><td>${(c.followers||0).toLocaleString()}</td></tr>`).join("");
-  res.innerHTML=`
-    <div class="hint">✅ ${extractResults.length}件を抽出。リスト化するとターゲットに自動登録されます（被りは自動除外）。</div>
-    <div class="field"><label>リスト名</label><input id="ex_lname" value="${esc(extractForm.keywords)} 抽出"></div>
-    <div style="display:flex;gap:8px;margin-bottom:10px">
-      <button class="btn" onclick="saveExtract(true)">リストとして保存</button>
-      <button class="btn sec" onclick="saveExtract(false)">ターゲットに追加のみ</button></div>
-    <div class="tbl-wrap"><div class="tbl-scroll" style="max-height:280px"><table>
-      <thead><tr><th>#</th><th>ハンドル</th><th>名前</th><th>地域</th><th>フォロワー</th></tr></thead>
-      <tbody>${rows}</tbody></table></div></div>`;
-}
-function saveExtract(asList){
-  const pf=extractForm.platform;
-  const tags=extractForm.tag?extractForm.tag.split(",").map(s=>s.trim()).filter(Boolean):[];
-  const existing=new Map(DB.contacts.map(c=>[dupKey(c.platform,c.handle),c.id]));
-  const ids=[]; let added=0, dup=0;
-  extractResults.forEach(c=>{
-    const k=dupKey(pf,c.handle);
-    if(existing.has(k)){ ids.push(existing.get(k)); dup++; return; }
-    const id=uid();
-    DB.contacts.unshift({id,platform:pf,handle:c.handle,name:c.name||"",company:c.company||"",region:c.region||"",tags:tags.slice()});
-    existing.set(k,id); ids.push(id); added++;
-  });
-  if(asList){
-    const name=(val("ex_lname")||"").trim()||"抽出リスト";
-    const uniqIds=[...new Set(ids)];
-    DB.lists.unshift({id:uid(),name,platform:pf,template:"こんにちは{{name}}さん、\n\n",contactIds:uniqIds,createdAt:new Date().toISOString()});
-  }
-  save(); closeModal(); render();
-  alert(`${added}件を新規追加${dup>0?`（既存${dup}件は流用）`:''}${asList?'し、リストを作成しました':'しました'}。`);
-}
-
-/* ---------- @ハンドル貼り付け登録（無料・手動リサーチ用） ---------- */
-function parseHandles(text){
-  return [...new Set(
-    (text||"").split(/[\s,、，\n\r]+/).map(s=>s.trim()).filter(Boolean)
-      .map(s=>s.replace(/^https?:\/\/(www\.)?(twitter|x)\.com\//i,"@").replace(/^https?:\/\/(www\.)?instagram\.com\//i,"@")) // URL貼付にも対応
-      .map(s=>s.replace(/\/.*$/,""))            // URL末尾除去
-      .map(s=>"@"+s.replace(/^@+/,""))          // 先頭@を正規化
-      .filter(s=>s.length>1)
-  )];
-}
-function pasteModal(){
-  const pfOpts=Object.entries(PLATFORMS).map(([k,v])=>`<option value="${k}" ${k==='x'?'selected':''}>${v.name}</option>`).join("");
-  openModal(`
-    <h3>@ハンドルを貼り付けて登録</h3>
-    <div class="hint">手動で見つけたアカウントの<b>@ユーザー名</b>を貼り付けて一括登録します（無料・規約内）。<br>
-      X → <a href="https://twitter.com/search-advanced" target="_blank">高度な検索</a>、Instagram → アプリの発見/ハッシュタグ で探せます。URLを貼ってもOK。</div>
-    <div class="field"><label>SNS</label><select id="pa_pf">${pfOpts}</select></div>
-    <div class="field"><label>@ハンドル（改行・カンマ・スペース区切り／URLも可）</label>
-      <textarea id="pa_handles" style="min-height:130px" placeholder="@taro_beauty
-@osaka_salon
-https://x.com/tokyo_ec"></textarea>
-      <div id="pa_count" class="mini" style="margin-top:4px"></div></div>
-    <div class="row">
-      <div class="field"><label>付与するタグ（任意）</label><input id="pa_tag" placeholder="美容, 見込み"></div>
-      <div class="field"><label>リスト名（入れるとリスト化）</label><input id="pa_lname" placeholder="例: 美容・東京"></div>
-    </div>
-    <div class="modal-foot">
-      <button class="btn ghost" onclick="closeModal()">閉じる</button>
-      <button class="btn" onclick="savePaste()">登録する</button></div>`);
-  const ta=document.getElementById("pa_handles");
-  const upd=()=>{ const el=document.getElementById("pa_count"); if(el) el.textContent=parseHandles(ta.value).length+"件を検出"; };
-  ta.addEventListener("input",upd); upd();
-}
-function savePaste(){
-  const pf=val("pa_pf");
-  const handles=parseHandles(val("pa_handles"));
-  if(!handles.length){ alert("@ハンドルを入力してください"); return; }
-  const tags=val("pa_tag").split(",").map(s=>s.trim()).filter(Boolean);
-  const listName=val("pa_lname").trim();
-  const existing=new Map(DB.contacts.map(c=>[dupKey(c.platform,c.handle),c.id]));
-  const ids=[]; let added=0, dup=0;
-  handles.forEach(h=>{
-    const k=dupKey(pf,h);
-    if(existing.has(k)){ ids.push(existing.get(k)); dup++; return; }
-    const id=uid();
-    DB.contacts.unshift({id,platform:pf,handle:h,name:"",company:"",region:"",tags:tags.slice()});
-    existing.set(k,id); ids.push(id); added++;
-  });
-  if(listName){
-    DB.lists.unshift({id:uid(),name:listName,platform:pf,template:"こんにちは{{name}}さん、\n\n",contactIds:[...new Set(ids)],createdAt:new Date().toISOString()});
-  }
-  save(); closeModal(); render();
-  alert(`${added}件を新規登録${dup>0?`（既存${dup}件は流用）`:''}${listName?'し、リストを作成しました':'しました'}。`);
+  alert(n+"件インポートしました");
 }
 
 /* ---------- セグメント / リスト ---------- */
@@ -659,24 +473,9 @@ function saveList(id){
     const l=DB.lists.find(x=>x.id===id);
     l.name=name; l.platform=val("l_pf"); l.template=val("l_tpl");
   }else{
-    const pf=val("l_pf");
-    const matched=segMatches();
-    const ids=matched.map(c=>c.id);
+    const ids=segMatches().map(c=>c.id);
     if(!ids.length){ if(!confirm("該当0件です。空のリストを作成しますか？")) return; }
-    else {
-      // 被りチェック（リスト内重複 + 送信済みとの重複）
-      const gSent=globalSentHandles();
-      const seen=new Set(); let internalDup=0, sentDup=0;
-      matched.forEach(c=>{
-        const k=dupKey(c.platform||pf, c.handle);
-        if(seen.has(k)) internalDup++; else seen.add(k);
-        if(gSent.has(k)) sentDup++;
-      });
-      if(internalDup>0 || sentDup>0){
-        if(!confirm(`⚠️ このリストに被りがあります。\n・リスト内で重複: ${internalDup}件\n・すでに送信済みと重複: ${sentDup}件\n\nこのまま作成しますか？（送信時に自動で重複除外されます）`)) return;
-      }
-    }
-    DB.lists.unshift({id:uid(),name,platform:pf,template:val("l_tpl"),contactIds:ids,createdAt:new Date().toISOString()});
+    DB.lists.unshift({id:uid(),name,platform:val("l_pf"),template:val("l_tpl"),contactIds:ids,createdAt:new Date().toISOString()});
   }
   save(); closeModal(); render();
 }
@@ -715,20 +514,13 @@ function pageQueue(){
     body=`<div class="empty">上のプルダウンから送信するリストを選択してください。</div>`;
   }else{
     const pf=list.platform, cap=effectiveCap(pf), used=sentToday(pf), rem=remaining(pf);
-    const plan=computeSendPlan(list);
-    const {targets, sentCount, pending, dups}=plan;
+    const sentIds=new Set(DB.logs.filter(l=>l.listId===list.id&&l.status==="sent").map(l=>l.contactId));
+    const targets=list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(Boolean);
+    const pending=targets.filter(c=>!sentIds.has(c.id));
     const willSend=Math.min(pending.length, rem);
     const apiWarn = !PLATFORMS[pf].api;
 
-    // 被り警告バナー
-    const dupWarn = dups.length? `<div class="hint warn" style="margin-bottom:16px">⚠️ <b>被り ${dups.length}件</b>を検出（${dups.filter(d=>d.reason==="他リストで送信済み").length}件=他リストで送信済み / ${dups.filter(d=>d.reason==="リスト内重複").length}件=リスト内重複）。二重送信防止のため<b>自動で送信対象から除外</b>します。</div>` : '';
-
-    // 被り行 + 送信対象行のプレビュー
-    const dupRows = dups.slice(0,50).map(d=>`<tr style="opacity:.55">
-        <td>–</td><td><b>${esc(d.c.handle)}</b></td><td>${esc(d.c.name)||'-'}</td>
-        <td class="mini">${esc(d.reason)}</td>
-        <td><span class="badge b-warn">被り・除外</span></td></tr>`).join("");
-    const preview = dupRows + pending.slice(0,50).map((c,i)=>{
+    const preview = pending.slice(0,50).map((c,i)=>{
       const blocked = i>=rem;
       return `<tr style="${blocked?'opacity:.4':''}">
         <td>${i+1}</td><td><b>${esc(c.handle)}</b></td><td>${esc(c.name)||'-'}</td>
@@ -737,15 +529,13 @@ function pageQueue(){
     }).join("");
 
     body=`
-    ${dupWarn}
     <div class="split" style="margin-bottom:16px">
       <div class="card">
         <h3 style="color:var(--txt);font-size:14px">送信プレビュー</h3>
         <div class="stat-inline">
           <div><span>${targets.length}</span><small>リスト総数</small></div>
-          <div><span>${sentCount}</span><small>送信済み</small></div>
-          <div><span style="color:${dups.length?'var(--warn)':'inherit'}">${dups.length}</span><small>被り除外</small></div>
-          <div><span>${pending.length}</span><small>送信可能</small></div>
+          <div><span>${sentIds.size}</span><small>送信済み</small></div>
+          <div><span>${pending.length}</span><small>未送信</small></div>
           <div><span style="color:${willSend<pending.length?'var(--warn)':'var(--accent2)'}">${willSend}</span><small>本日送信可</small></div>
         </div>
       </div>
@@ -759,8 +549,8 @@ function pageQueue(){
     </div>
 
     <div class="toolbar">
-      <button class="btn" onclick="runSend('${list.id}')" ${willSend<=0?'disabled':''}>${willSend}件を送信</button>
-      ${sentCount>0?`<button class="btn ghost sm" onclick="markReplies('${list.id}')">返信を記録</button>`:''}
+      <button class="btn" onclick="runSend('${list.id}')" ${willSend<=0?'disabled':''}>🚀 ${willSend}件を送信キューに投入</button>
+      ${sentIds.size>0?`<button class="btn ghost sm" onclick="markReplies('${list.id}')">返信を記録</button>`:''}
       <div class="spacer"></div>
       <span class="mini">上限に達すると自動停止します</span>
     </div>
@@ -772,7 +562,7 @@ function pageQueue(){
   }
 
   return `
-  <div class="page-head"><div><h2>送信</h2>
+  <div class="page-head"><div><h2>送信キュー</h2>
     <p>ガイドライン上限内で自動送信します（超過分は翌日以降に自動繰越）</p></div></div>
   <div class="toolbar">
     <label style="margin:0">送信リスト：</label>
@@ -786,11 +576,11 @@ function fillTpl(tpl,c){ return (tpl||"").replace(/\{\{name\}\}/g,c.name||c.hand
 async function runSend(listId){
   const list=DB.lists.find(l=>l.id===listId); const pf=list.platform;
   let rem=remaining(pf);
-  const {pending, dups}=computeSendPlan(list);   // 被りは除外済み
+  const sentIds=new Set(DB.logs.filter(l=>l.listId===list.id&&l.status==="sent").map(l=>l.contactId));
+  const pending=list.contactIds.map(id=>DB.contacts.find(c=>c.id===id)).filter(c=>c&&!sentIds.has(c.id));
   const n=Math.min(pending.length,rem);
-  if(n<=0){ alert(dups.length? `送信可能な宛先がありません。\n\n⚠️ 被り${dups.length}件は二重送信防止のため除外されています。` : "本日の送信可能数が0です"); return; }
+  if(n<=0){ alert("本日の送信可能数が0です"); return; }
   const batch=pending.slice(0,n);
-  if(dups.length && !confirm(`⚠️ 被り ${dups.length}件（他リストで送信済み／重複）を検出しました。\nこれらを除外して ${n}件に送信します。続けますか？`)) return;
 
   /* ---- 実API送信モード（サーバー配信=ワークスペース時） ---- */
   if(serverMode()){
@@ -895,17 +685,6 @@ function pagePosts(){
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:16px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-      <div><h3 style="color:var(--txt);font-size:14px;margin:0">定期自動投稿（完全自動）</h3>
-        <p class="mini" style="margin:2px 0 0">テーマと頻度を設定すると、cronが定期的にAI生成→自動投稿します（放置でOK）。</p></div>
-      <button class="btn sm" onclick="autoPlanModal()" ${engineReady()?'':'disabled'}>＋ プラン作成</button></div>
-    <div class="tbl-scroll"><table>
-      <thead><tr><th>SNS</th><th>テーマ</th><th>頻度</th><th>時刻</th><th>最終投稿</th><th>ON/OFF</th><th></th></tr></thead>
-      <tbody id="apBody">${apRows()}</tbody>
-    </table></div>
-  </div>
-
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <h3 style="color:var(--txt);font-size:14px;margin:0">予約・投稿履歴</h3>
@@ -915,70 +694,6 @@ function pagePosts(){
       <tbody id="spBody">${spRows()}</tbody>
     </table></div>
   </div>`;
-}
-/* 定期自動投稿プラン */
-let autoPlans=[];
-const AP_FREQ={1:'毎日',2:'2日に1回',3:'3日に1回',7:'週1回'};
-function apRows(){
-  if(!autoPlans.length) return '<tr><td colspan="7"><div class="empty">プランがありません。「＋プラン作成」で定期投稿を設定できます。</div></td></tr>';
-  return autoPlans.map(p=>`<tr>
-    <td>${pfPill(p.platform)}</td>
-    <td class="mini">${esc((p.brief||'').slice(0,36))}${(p.brief||'').length>36?'…':''}</td>
-    <td>${AP_FREQ[p.interval_days]||(p.interval_days+'日に1回')}</td>
-    <td>${p.hour}:00</td>
-    <td class="mini">${p.last_posted?esc(p.last_posted.slice(0,16).replace('T',' ')):'—'}${p.last_error?`<br><span style="color:var(--danger)">${esc((p.last_error||'').slice(0,40))}</span>`:''}</td>
-    <td><div class="toggle ${p.active?'on':''}" onclick="toggleAutoPlan('${p.id}',${!p.active})"><i></i></div></td>
-    <td style="text-align:right"><button class="btn ghost sm" onclick="delAutoPlan('${p.id}')">✕</button></td>
-  </tr>`).join("");
-}
-async function loadAutoPlans(){
-  if(!engineReady()){ autoPlans=[]; return; }
-  try{ const r=await fetchT(api("/autoposts"),{headers:wsHeaders()},15000); const j=await r.json(); autoPlans=j.plans||[];
-    const b=document.getElementById("apBody"); if(b) b.innerHTML=apRows(); }catch(e){}
-}
-function autoPlanModal(){
-  const pfOpts=POST_PF.map(k=>`<option value="${k}" ${k==='x'?'selected':''}>${PLATFORMS[k].name}</option>`).join("");
-  openModal(`
-    <h3>定期自動投稿プラン</h3>
-    <div class="hint">設定したテーマでcronがAI生成→自動投稿します。ANTHROPIC_API_KEY と 各SNSの投稿権限が必要です。</div>
-    <div class="row">
-      <div class="field"><label>投稿先SNS</label><select id="ap_pf" onchange="apImgToggle()">${pfOpts}</select></div>
-      <div class="field"><label>頻度</label><select id="ap_freq">
-        <option value="1">毎日</option><option value="2">2日に1回</option><option value="3">3日に1回</option><option value="7">週1回</option></select></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>投稿時刻（JST・この時刻以降）</label><input type="number" id="ap_hour" min="0" max="23" value="10"></div>
-      <div class="field"><label class="checkbox" style="margin-top:22px"><input type="checkbox" id="ap_tags" checked>ハッシュタグを付ける</label></div>
-    </div>
-    <div class="field"><label>投稿テーマ・指示</label>
-      <textarea id="ap_brief" placeholder="例）美容サロンの集客。季節の肌ケアTipsとキャンペーンをバランスよく。親しみやすいトーンで毎日1本。"></textarea></div>
-    <div class="field"><label>トーン</label><input id="ap_tone" placeholder="親しみやすい / 専門的 など"></div>
-    <div class="field" id="ap_img_field" style="display:none"><label>画像URL（Instagram必須・1行ずつ／順番にローテーション）</label>
-      <textarea id="ap_imgs" placeholder="https://.../1.jpg
-https://.../2.jpg"></textarea></div>
-    <div class="modal-foot"><button class="btn ghost" onclick="closeModal()">キャンセル</button>
-      <button class="btn" onclick="saveAutoPlan()">作成</button></div>`);
-  apImgToggle();
-}
-function apImgToggle(){ const f=document.getElementById("ap_img_field"); if(f) f.style.display=(val("ap_pf")==="instagram")?"block":"none"; }
-async function saveAutoPlan(){
-  const platform=val("ap_pf"); const brief=val("ap_brief").trim();
-  if(!brief){ alert("投稿テーマを入力してください"); return; }
-  const image_urls=platform==="instagram"?(val("ap_imgs")||"").split(/\n+/).map(s=>s.trim()).filter(Boolean):[];
-  if(platform==="instagram" && !image_urls.length){ alert("Instagramは画像URLが1つ以上必要です"); return; }
-  try{
-    const r=await fetchT(api("/autoposts"),{method:"POST",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(wsCreds({platform,brief,tone:val("ap_tone").trim(),hashtags:document.getElementById("ap_tags").checked,interval_days:+val("ap_freq"),hour:+val("ap_hour")||10,image_urls}))});
-    const j=await r.json(); if(j.error){ alert("作成失敗: "+j.error); return; }
-    closeModal(); loadAutoPlans(); alert("プランを作成しました。指定時刻以降に自動投稿されます。");
-  }catch(e){ alert("接続失敗: "+e.message); }
-}
-async function toggleAutoPlan(id,active){
-  try{ await fetchT(api("/autoposts"),{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(wsCreds({id,active}))}); loadAutoPlans(); }catch(e){ alert("失敗: "+e.message); }
-}
-async function delAutoPlan(id){
-  if(!confirm("このプランを削除しますか？")) return;
-  try{ await fetchT(api("/autoposts/"+id),{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify(wsCreds())}); loadAutoPlans(); }catch(e){ alert("失敗: "+e.message); }
 }
 
 async function genPosts(){

@@ -49,28 +49,6 @@ def _hour():
     return int(time.strftime("%H"))
 
 
-# ---- JST（日本時間）ヘルパ：定期自動投稿のスケジュール判定に使用 ----
-def _jst():
-    return time.gmtime(time.time() + 9 * 3600)
-
-
-def _jst_date():
-    return time.strftime("%Y-%m-%d", _jst())
-
-
-def _jst_hour():
-    return int(time.strftime("%H", _jst()))
-
-
-def _days_between(d1, d2):
-    try:
-        a = time.mktime(time.strptime(d1, "%Y-%m-%d"))
-        b = time.mktime(time.strptime(d2, "%Y-%m-%d"))
-        return int(round((b - a) / 86400))
-    except Exception:
-        return 999
-
-
 def ws_dir(m):
     return os.path.join(DATA_DIR, "ws", m)
 
@@ -209,64 +187,6 @@ def build_sender(member, platform):
     if platform == "instagram":
         return MetaDMSender(creds, "IG_PAGE_TOKEN", id_key="IG_USER_ID", ig=True)
     raise SenderError(f"未対応のSNSです: {platform}（DMは x / facebook / instagram）")
-
-
-# ---- ターゲット抽出（キーワード検索）----
-# 公式検索APIが実用になるのは X のみ。他SNSは検索API無し/DM不可のため非対応。
-EXTRACT_UNSUPPORTED = {
-    "instagram": "Instagramはハッシュタグ検索のみで、抽出したユーザーへのコールドDMが規約上できないため抽出非対応です。",
-    "facebook": "Facebookは公式のユーザー/投稿検索APIが無いため抽出非対応です。",
-    "tiktok": "TikTokは一般ユーザー検索APIが無いため抽出非対応です。",
-    "threads": "Threadsは公式検索APIが無いため抽出非対応です。",
-    "linkedin": "LinkedInは公式検索APIが無いため抽出非対応です。",
-}
-
-
-def x_search(session, keywords, want, region="", min_followers=0):
-    """X 公式APIでキーワード検索し、投稿者を抽出（要 Basic/Pro tier）。"""
-    query = keywords.strip() + " -is:retweet"
-    params = {
-        "query": query, "max_results": 100, "expansions": "author_id",
-        "user.fields": "name,username,location,public_metrics,description",
-    }
-    collected = {}
-    pages = 0
-    next_token = None
-    while len(collected) < want and pages < 5:
-        if next_token:
-            params["next_token"] = next_token
-        r = session.get("https://api.twitter.com/2/tweets/search/recent", params=params)
-        if r.status_code == 429:
-            raise SenderError("レート制限(429): 時間をおいて再試行してください")
-        if r.status_code == 403:
-            raise SenderError("検索APIの権限がありません（X APIのBasic/Proプランが必要です）")
-        if r.status_code != 200:
-            raise SenderError(f"検索失敗 {r.status_code}: {r.text[:180]}")
-        data = r.json()
-        for u in data.get("includes", {}).get("users", []):
-            uid = u.get("id")
-            if uid in collected:
-                continue
-            loc = u.get("location", "") or ""
-            fol = u.get("public_metrics", {}).get("followers_count", 0)
-            if region and region not in loc:
-                continue
-            if min_followers and fol < min_followers:
-                continue
-            collected[uid] = u
-            if len(collected) >= want:
-                break
-        next_token = data.get("meta", {}).get("next_token")
-        pages += 1
-        if not next_token:
-            break
-    return [{
-        "handle": "@" + u.get("username", ""),
-        "name": u.get("name", ""),
-        "company": (u.get("description", "") or "").replace("\n", " ")[:60],
-        "region": u.get("location", "") or "",
-        "followers": u.get("public_metrics", {}).get("followers_count", 0),
-    } for u in collected.values()]
 
 
 # ============================================================
@@ -560,32 +480,6 @@ def send():
                    remaining=max(0, cap - sent_today(m, platform)))
 
 
-@app.route("/extract", methods=["POST"])
-def extract():
-    body = request.get_json(force=True, silent=True) or {}
-    m, err = _wsauth(body)
-    if err:
-        return jsonify(error=err[0]), err[1]
-    platform = body.get("platform", "x")
-    keywords = (body.get("keywords", "") or "").strip()
-    if not keywords:
-        return jsonify(error="キーワードを入力してください"), 400
-    if platform != "x":
-        return jsonify(supported=False,
-                       error=EXTRACT_UNSUPPORTED.get(platform, "このSNSは抽出非対応です。")), 200
-    want = min(int(body.get("count", 50) or 50), 200)
-    region = (body.get("region", "") or "").strip()
-    min_f = int(body.get("min_followers", 0) or 0)
-    try:
-        sender = build_sender(m, "x")
-        results = x_search(sender.session, keywords, want, region, min_f)
-    except SenderError as e:
-        return jsonify(error=str(e)), 400
-    except Exception as e:
-        return jsonify(error=f"抽出失敗: {e}"), 500
-    return jsonify(supported=True, candidates=results, count=len(results))
-
-
 @app.route("/status")
 def status():
     m = _hdrauth()
@@ -680,62 +574,6 @@ def posts_delete(pid):
         return jsonify(error=err[0]), err[1]
     with _lock:
         _sw(m, "posts.json", [p for p in _lw(m, "posts.json", []) if p["id"] != pid])
-    return jsonify(ok=True)
-
-
-# ---- 定期自動投稿プラン（cronがAI生成→自動投稿）----
-@app.route("/autoposts", methods=["GET"])
-def autoposts_get():
-    m = _hdrauth()
-    if not m:
-        return jsonify(error="unauthorized"), 401
-    return jsonify(plans=_lw(m, "autoposts.json", []))
-
-
-@app.route("/autoposts", methods=["POST"])
-def autoposts_post():
-    body = request.get_json(force=True, silent=True) or {}
-    m, err = _wsauth(body)
-    if err:
-        return jsonify(error=err[0]), err[1]
-    with _lock:
-        plans = _lw(m, "autoposts.json", [])
-        pid = body.get("id")
-        if pid:  # 更新（active切替など）
-            for p in plans:
-                if p["id"] == pid:
-                    for k in ("platform", "brief", "tone", "hashtags", "interval_days", "hour", "image_urls", "active"):
-                        if k in body:
-                            p[k] = body[k]
-            _sw(m, "autoposts.json", plans)
-            return jsonify(ok=True, id=pid)
-        plan = {
-            "id": f"auto_{int(time.time())}",
-            "platform": body.get("platform", "x"),
-            "brief": body.get("brief", ""),
-            "tone": body.get("tone", ""),
-            "hashtags": bool(body.get("hashtags", True)),
-            "interval_days": int(body.get("interval_days", 1)),
-            "hour": int(body.get("hour", 10)),
-            "image_urls": body.get("image_urls", []) or [],
-            "img_index": 0,
-            "active": bool(body.get("active", True)),
-            "last_posted": "",
-            "last_error": "",
-        }
-        plans.insert(0, plan)
-        _sw(m, "autoposts.json", plans)
-    return jsonify(ok=True, id=plan["id"])
-
-
-@app.route("/autoposts/<pid>", methods=["DELETE"])
-def autoposts_delete(pid):
-    body = request.get_json(force=True, silent=True) or {}
-    m, err = _wsauth(body)
-    if err:
-        return jsonify(error=err[0]), err[1]
-    with _lock:
-        _sw(m, "autoposts.json", [p for p in _lw(m, "autoposts.json", []) if p["id"] != pid])
     return jsonify(ok=True)
 
 
@@ -842,62 +680,7 @@ def drain():
             with _lock:
                 _sw(member, "posts.json", items)
 
-        # 定期自動投稿（AI生成→自動投稿）
-        ms["autoposts"] = []
-        plans = _lw(member, "autoposts.json", [])
-        pchanged = False
-        jdate, jhour = _jst_date(), _jst_hour()
-        for pl in plans:
-            if not pl.get("active") or pl.get("platform") not in _POSTERS:
-                continue
-            last = pl.get("last_posted", "")
-            last_date = last[:10] if last else ""
-            if last_date == jdate:          # 本日は投稿済み
-                continue
-            if jhour < int(pl.get("hour", 10)):   # 指定時刻前
-                continue
-            if last_date and _days_between(last_date, jdate) < int(pl.get("interval_days", 1)):
-                continue                    # 投稿間隔が未経過
-            if (time.time() - start) > max_seconds:
-                break
-            try:
-                gen = generate_posts(pl.get("brief", ""), pl["platform"],
-                                     pl.get("tone", ""), 1, pl.get("hashtags", True))
-                text = gen[0]["text"]
-                hts = gen[0].get("hashtags", [])
-                if hts:
-                    text += "\n" + " ".join("#" + h.lstrip("#") for h in hts)
-                image = None
-                if pl["platform"] == "instagram":
-                    imgs = pl.get("image_urls", []) or []
-                    if not imgs:
-                        pl["last_error"] = "画像URL未設定のためスキップ"
-                        pchanged = True
-                        ms["autoposts"].append({"id": pl["id"], "status": "skipped", "error": "画像URL未設定"})
-                        continue
-                    idx = int(pl.get("img_index", 0)) % len(imgs)
-                    image = imgs[idx]
-                    pl["img_index"] = idx + 1
-                build_poster(member, pl["platform"]).post(text, image)
-                pl["last_posted"] = _now_iso()
-                pl["last_error"] = ""
-                pchanged = True
-                ms["autoposts"].append({"id": pl["id"], "status": "posted"})
-                # 履歴にも記録
-                hist = _lw(member, "posts.json", [])
-                hist.insert(0, {"id": f"auto_{int(time.time()*1000)}", "platform": pl["platform"],
-                                "text": text, "image_url": image or "", "publish_at": _now_iso(),
-                                "status": "posted", "posted_at": _now_iso(), "auto": True, "error": ""})
-                _sw(member, "posts.json", hist)
-            except Exception as e:
-                pl["last_error"] = str(e)[:200]
-                pchanged = True
-                ms["autoposts"].append({"id": pl["id"], "status": "error", "error": str(e)[:120]})
-        if pchanged:
-            with _lock:
-                _sw(member, "autoposts.json", plans)
-
-        if ms["dm"] or ms["posts"] or ms["autoposts"]:
+        if ms["dm"] or ms["posts"]:
             summary[member] = ms
 
     return jsonify(ok=True, at=_now_iso(), members=len(list_members()), summary=summary)
