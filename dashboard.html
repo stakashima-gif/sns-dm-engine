@@ -6,10 +6,10 @@
 <title>全SNS対応 自動DM管理システム</title>
 <style>
   :root{
-    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a;
-    --txt:#e7ebf2; --muted:#8b93a3; --accent:#4f8cff; --accent2:#22c55e;
-    --warn:#f59e0b; --danger:#ef4444; --chip:#232834;
-    --x:#1d9bf0; --ig:#e1306c; --fb:#1877f2; --tt:#00f2ea; --th:#a855f7; --li:#0a66c2;
+    --bg:#f6f7f9; --panel:#ffffff; --panel2:#eef1f5; --line:#e5e8ec;
+    --txt:#1f2430; --muted:#6b7280; --accent:#2f6bef; --accent2:#16a34a;
+    --warn:#d97706; --danger:#dc2626; --chip:#eef1f5;
+    --x:#1d9bf0; --ig:#e1306c; --fb:#1877f2; --tt:#0891b2; --th:#a855f7; --li:#0a66c2;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;font-size:14px;line-height:1.5}
@@ -40,7 +40,7 @@
   /* Cards */
   .grid{display:grid;gap:14px}
   .cards{grid-template-columns:repeat(auto-fill,minmax(215px,1fr))}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
   .card h3{font-size:13px;color:var(--muted);font-weight:500;margin-bottom:8px}
   .kpi{font-size:26px;font-weight:700}
   .kpi small{font-size:13px;color:var(--muted);font-weight:400}
@@ -51,20 +51,21 @@
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:99px;background:var(--chip)}
   .dot{width:8px;height:8px;border-radius:50%}
   .badge{font-size:11px;padding:2px 8px;border-radius:99px;font-weight:600}
-  .b-ok{background:rgba(34,197,94,.15);color:#4ade80}
-  .b-warn{background:rgba(245,158,11,.15);color:#fbbf24}
-  .b-off{background:rgba(139,147,163,.15);color:var(--muted)}
-  .b-run{background:rgba(79,140,255,.18);color:#7aa8ff}
+  .b-ok{background:#e7f6ec;color:#15803d}
+  .b-warn{background:#fdf0e1;color:#b45309}
+  .b-off{background:#eef1f5;color:#6b7280}
+  .b-run{background:#e8f0fe;color:#2f6bef}
   /* Table */
   table{width:100%;border-collapse:collapse;font-size:13px}
   th{text-align:left;color:var(--muted);font-weight:500;font-size:11.5px;padding:9px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
   td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-  tr:hover td{background:rgba(255,255,255,.02)}
+  tr:hover td{background:#f7f8fa}
   .tbl-wrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
   .tbl-scroll{overflow-x:auto}
   /* Forms */
-  input,select,textarea{background:var(--panel2);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;width:100%}
-  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
+  input,select,textarea{background:#fff;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;width:100%}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,107,239,.12)}
+  input::placeholder,textarea::placeholder{color:#aeb4bf}
   textarea{resize:vertical;min-height:80px}
   label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
   .field{margin-bottom:13px}
@@ -77,9 +78,9 @@
   .checkbox{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--txt);cursor:pointer}
   .checkbox input{width:auto}
   /* Modal */
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .overlay{position:fixed;inset:0;background:rgba(17,24,39,.35);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
   .overlay.on{display:flex}
-  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:100%;max-width:520px;max-height:88vh;overflow:auto}
+  .modal{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:100%;max-width:520px;max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(16,24,40,.18)}
   .modal h3{font-size:16px;margin-bottom:16px}
   .modal-foot{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
   .hint{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:11px 13px;font-size:12.5px;color:var(--muted);margin-bottom:16px}
