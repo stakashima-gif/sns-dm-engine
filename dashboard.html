@@ -191,7 +191,7 @@ const PAGES = [
   {id:"dashboard", icon:"📊", label:"ダッシュボード"},
   {id:"contacts",  icon:"👥", label:"ターゲット"},
   {id:"segments",  icon:"🎯", label:"セグメント / リスト"},
-  {id:"queue",     icon:"🚀", label:"送信キュー"},
+  {id:"queue",     icon:"📨", label:"DM送信"},
   {id:"posts",     icon:"📢", label:"自動投稿"},
   {id:"logs",      icon:"📜", label:"送信ログ / 歩留"},
   {id:"settings",  icon:"⚙️", label:"設定"},
@@ -258,7 +258,7 @@ function pageDashboard(){
   return `
   <div class="page-head"><div><h2>ダッシュボード</h2>
     <p>本日 ${todayStr()} ・ ガイドライン上限を自動監視しています</p></div>
-    <button class="btn" onclick="go('queue')">🚀 送信キューへ</button></div>
+    <button class="btn" onclick="go('queue')">DM送信</button></div>
 
   <div class="grid cards" style="margin-bottom:16px">
     <div class="card"><h3>登録ターゲット</h3><div class="kpi">${totalContacts}<small> 件</small></div></div>
@@ -408,7 +408,7 @@ function pageSegments(){
     <p>条件でターゲットを絞り込み、送信リストを作成します</p></div>
     <button class="btn" onclick="newListModal()">＋ リスト作成</button></div>
 
-  <div class="hint">セグメント条件でターゲットを抽出 → リスト化 → SNSと文面を割り当て → 送信キューへ流します。</div>
+  <div class="hint">セグメント条件でターゲットを抽出 → リスト化 → SNSと文面を割り当て → DM送信へ流します。</div>
 
   <div class="tbl-wrap"><div class="tbl-scroll"><table>
     <thead><tr><th>リスト名</th><th>SNS</th><th>件数</th><th>文面</th><th>状態</th><th></th></tr></thead>
@@ -550,7 +550,7 @@ function pageQueue(){
     </div>
 
     <div class="toolbar">
-      <button class="btn" onclick="runSend('${list.id}')" ${willSend<=0?'disabled':''}>🚀 ${willSend}件を送信キューに投入</button>
+      <button class="btn" onclick="runSend('${list.id}')" ${willSend<=0?'disabled':''}>${willSend}件を送信</button>
       ${sentIds.size>0?`<button class="btn ghost sm" onclick="markReplies('${list.id}')">返信を記録</button>`:''}
       <div class="spacer"></div>
       <span class="mini">上限に達すると自動停止します</span>
@@ -563,7 +563,7 @@ function pageQueue(){
   }
 
   return `
-  <div class="page-head"><div><h2>送信キュー</h2>
+  <div class="page-head"><div><h2>DM送信</h2>
     <p>ガイドライン上限内で自動送信します（超過分は翌日以降に自動繰越）</p></div></div>
   <div class="toolbar">
     <label style="margin:0">送信リスト：</label>
@@ -613,7 +613,7 @@ async function runSend(listId){
   }
 
   /* ---- デモモード（file://などローカル・記録のみ） ---- */
-  if(!confirm(`${n}件を送信キューに投入します。\n\n※デモモード（記録のみ）です。実送信するにはチームの共有URL（.../w/名前）から利用してください。`)) return;
+  if(!confirm(`${n}件を送信します。\n\n※デモモード（記録のみ）です。実送信するにはチームの共有URL（.../w/名前）から利用してください。`)) return;
   const now=new Date();
   for(let i=0;i<n;i++){
     const c=batch[i];
